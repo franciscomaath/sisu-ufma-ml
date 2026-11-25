@@ -20,13 +20,13 @@ ANOS_TREINO = [2018, 2019, 2020, 2021]
 ANOS_VALIDACAO = [2022]
 ANOS_TESTE = [2023]
 
-ALVO = "APROVADO"
+ALVO = "NOTA_SUFICIENTE"
 
 # Colunas que vazam o resultado: nunca podem ser atributos.
 COLUNAS_VAZAMENTO = ["NOTA_CORTE", "CLASSIFICACAO", "MATRICULA"]
 
 # Identificação da inscrição / auxiliares que não entram como atributos do modelo.
-COLUNAS_NAO_ATRIBUTO = [ALVO, "ANO"] + COLUNAS_VAZAMENTO
+COLUNAS_NAO_ATRIBUTO = [ALVO, "APROVADO", "ANO"] + COLUNAS_VAZAMENTO
 
 # Chave do histórico de cortes (sem o ano). O ano anterior é resolvido na junção.
 CHAVE_CURSO = ["CODIGO_CAMPUS", "NOME_CURSO_NORM", "GRAU", "TURNO"]

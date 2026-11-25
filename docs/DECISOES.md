@@ -13,7 +13,7 @@ arquivo em um commit próprio antes de mudar o código, para o registro continua
 
 | # | Tema | Decisão | Status |
 |---|---|---|---|
-| D1 | Alvo | `NOTA_SUFICIENTE = NOTA_CANDIDATO >= NOTA_CORTE` | Adotada, falta implementar |
+| D1 | Alvo | `NOTA_SUFICIENTE = NOTA_CANDIDATO >= NOTA_CORTE` | Implementada |
 | D2 | Atributos | Lista explícita (allowlist) em `config.py` | Adotada, falta implementar |
 | D3 | Corte anterior ausente | NaN + indicador de ausência no Pipeline | Adotada |
 | D4 | Divisão | Temporal: treino 2018–2021, validação 2022, teste 2023 | Implementada |
@@ -34,12 +34,14 @@ arquivo em um commit próprio antes de mudar o código, para o registro continua
 **Decisão.** O alvo do modelo passa a ser:
 
 ```python
-NOTA_SUFICIENTE = (NOTA_CANDIDATO >= NOTA_CORTE).astype("int8")
+NOTA_SUFICIENTE = (NOTA_CANDIDATO >= NOTA_CORTE)
 ```
 
 **Por quê.** No SISU, quem é aprovado na 1ª opção não é chamado na 2ª. Por isso `APROVADO`
 mistura duas situações diferentes: "a nota não bastava" e "foi aprovado em outra opção".
 Os dados confirmam:
+
+Entre as inscrições com nota e corte disponíveis:
 
 | | Não aprovado | Aprovado |
 |---|---|---|
@@ -55,11 +57,14 @@ Com `APROVADO` como alvo, o modelo aprenderia que a 2ª opção "atrapalha", qua
 **Cuidados.**
 - `NOTA_CORTE` do próprio ano continua **proibida como atributo**. Ela só serve para construir o alvo
   e o histórico de cortes.
+- As 334 inscrições sem corte permanecem no parquet com alvo ausente (`Int8` anulável).
+  Dessas, 104 têm `APROVADO = 1`, o que explica a diferença entre 39.832 e os 39.936
+  aprovados do relatório da Etapa 1. As linhas sem alvo ficam fora do ajuste e da avaliação supervisionada.
 - Manter `APROVADO` no parquet, apenas para uma tabela de comparação no artigo
   (desempenho do modelo final medido contra o alvo antigo).
 
-**Implementar.** `config.ALVO = "NOTA_SUFICIENTE"`, criar a coluna em `src/limpeza.py`, incluir
-`APROVADO` em `COLUNAS_NAO_ATRIBUTO` e atualizar os testes.
+**Implementação.** `config.ALVO` aponta para `NOTA_SUFICIENTE`, que é criada em `src/limpeza.py`.
+`APROVADO` está em `COLUNAS_NAO_ATRIBUTO`.
 
 ---
 

@@ -56,7 +56,8 @@ _Treino, avaliação e aplicação: a preencher quando estiverem prontos._
 | Etapa | Status |
 |---|---|
 | Limpeza, histórico de cortes, divisão temporal e testes | ✅ Pronta (`reports/relatorio_etapa1.md`) |
-| Novo alvo e lista explícita de atributos (D1 e D2) | ⏳ A implementar |
+| Alvo `NOTA_SUFICIENTE` (D1) | ✅ Implementado |
+| Lista explícita de atributos (D2) | ⏳ A implementar |
 | Modelos, calibração, avaliação e interpretação | ⏳ A fazer |
 | Aplicação Streamlit | ⏳ A fazer |
 | Artigo SBC e vídeo | ⏳ A fazer |

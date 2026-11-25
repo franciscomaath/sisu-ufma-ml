@@ -10,7 +10,7 @@ def test_nenhuma_coluna_de_vazamento_nos_atributos(df_bruto):
     df = limpar(df_bruto)
     df = adicionar_corte_anterior(df, construir_historico(df))
     atributos = colunas_atributos(df)
-    for c in config.COLUNAS_VAZAMENTO + [config.ALVO]:
+    for c in config.COLUNAS_VAZAMENTO + [config.ALVO, "APROVADO"]:
         assert c not in atributos
     assert "CORTE_ANO_ANTERIOR" in atributos and "DIF_CORTE_ANTERIOR" in atributos
 

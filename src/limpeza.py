@@ -61,8 +61,12 @@ def limpar(df: pd.DataFrame, log: dict | None = None) -> pd.DataFrame:
     log = log if log is not None else {}
     df = df.copy()
 
-    # 1) Alvo S/N -> 0/1
-    df[config.ALVO] = (df[config.ALVO].astype(str).str.strip().str.upper() == "S").astype("int8")
+    # 1) Construir o alvo e manter a aprovação oficial para comparação.
+    notas_disponiveis = df[["NOTA_CANDIDATO", "NOTA_CORTE"]].notna().all(axis=1)
+    nota_suficiente = df["NOTA_CANDIDATO"] >= df["NOTA_CORTE"]
+    df[config.ALVO] = nota_suficiente.astype("Int8").where(notas_disponiveis)
+    log["linhas_sem_alvo"] = int((~notas_disponiveis).sum())
+    df["APROVADO"] = (df["APROVADO"].astype(str).str.strip().str.upper() == "S").astype("int8")
 
     # 2) Idade a partir do ano de nascimento; fora de [14, 80] vira NaN
     idade = df["ANO"] - df["DT_NASCIMENTO"]
@@ -81,7 +85,7 @@ def limpar(df: pd.DataFrame, log: dict | None = None) -> pd.DataFrame:
     mapa = {t: modalidade_canonica(t) for t in df["MOD_CONCORRENCIA"].unique()}
     df["MODALIDADE"] = df["MOD_CONCORRENCIA"].map(mapa)
 
-    # 5) Descartes (NOTA_CORTE fica só para construir o histórico)
+    # 5) Descartes (NOTA_CORTE fica para construir o alvo e o histórico)
     log["colunas_descartadas"] = dict(COLUNAS_DESCARTADAS)
     df = df.drop(columns=[c for c in COLUNAS_DESCARTADAS if c in df.columns])
     return df.reset_index(drop=True)
@@ -96,7 +100,9 @@ def main() -> None:
     limpo.to_parquet(config.PARQUET_LIMPO, index=False)
     for k, v in log.items():
         print(k, "->", v)
-    print(limpo.groupby("ANO")[config.ALVO].agg(["size", "sum", "mean"]))
+    print(limpo.groupby("ANO")[config.ALVO].agg(
+        inscricoes="size", rotuladas="count", suficientes="sum", taxa="mean"
+    ))
 
 
 if __name__ == "__main__":
