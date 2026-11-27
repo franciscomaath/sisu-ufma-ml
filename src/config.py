@@ -25,8 +25,18 @@ ALVO = "NOTA_SUFICIENTE"
 # Colunas que vazam o resultado: nunca podem ser atributos.
 COLUNAS_VAZAMENTO = ["NOTA_CORTE", "CLASSIFICACAO", "MATRICULA"]
 
-# Identificação da inscrição / auxiliares que não entram como atributos do modelo.
-COLUNAS_NAO_ATRIBUTO = [ALVO, "APROVADO", "ANO"] + COLUNAS_VAZAMENTO
+# Lista explícita de atributos do modelo (D2).
+ATRIBUTOS_NUMERICOS = [
+    "NOTA_L", "NOTA_CH", "NOTA_CN", "NOTA_M", "NOTA_R",
+    "NOTA_CANDIDATO", "PERCENTUAL_BONUS",
+    "CORTE_ANO_ANTERIOR", "DIF_CORTE_ANTERIOR",
+    "TEM_NOTA_ZERO",
+]
+ATRIBUTOS_CATEGORICOS = [
+    "CODIGO_CAMPUS", "NOME_CURSO_NORM", "GRAU", "TURNO",
+    "MODALIDADE", "EDICAO", "OPCAO",
+]
+ATRIBUTOS = ATRIBUTOS_NUMERICOS + ATRIBUTOS_CATEGORICOS
 
 # Chave do histórico de cortes (sem o ano). O ano anterior é resolvido na junção.
 CHAVE_CURSO = ["CODIGO_CAMPUS", "NOME_CURSO_NORM", "GRAU", "TURNO"]

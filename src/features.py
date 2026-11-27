@@ -30,8 +30,11 @@ def cobertura_por_ano(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def colunas_atributos(df: pd.DataFrame) -> list[str]:
-    """Colunas permitidas como atributos (exclui alvo, vazamento e auxiliares)."""
-    return [c for c in df.columns if c not in config.COLUNAS_NAO_ATRIBUTO]
+    """Valida e retorna as colunas de entrada na ordem definida pela D2."""
+    faltantes = [coluna for coluna in config.ATRIBUTOS if coluna not in df.columns]
+    if faltantes:
+        raise ValueError(f"Atributos obrigatórios ausentes: {', '.join(faltantes)}")
+    return config.ATRIBUTOS.copy()
 
 
 def main() -> None:

@@ -46,10 +46,9 @@ pip install -r requirements.txt
 # 1. Colocar o CSV em data/raw/sisu_ufma_2017_2023.csv
 python -m src.limpeza    # gera data/processed/sisu_limpo.parquet
 python -m src.features   # gera models/historico_cortes.parquet e mostra a cobertura por ano
+python -m src.baselines  # compara a regra e as regressões na validação de 2022
 pytest -q                # testes
 ```
-
-_Treino, avaliação e aplicação: a preencher quando estiverem prontos._
 
 ## Estado do projeto
 
@@ -57,8 +56,9 @@ _Treino, avaliação e aplicação: a preencher quando estiverem prontos._
 |---|---|
 | Limpeza, histórico de cortes, divisão temporal e testes | ✅ Pronta (`reports/relatorio_etapa1.md`) |
 | Alvo `NOTA_SUFICIENTE` (D1) | ✅ Implementado |
-| Lista explícita de atributos (D2) | ⏳ A implementar |
-| Modelos, calibração, avaliação e interpretação | ⏳ A fazer |
+| Lista explícita de atributos (D2) | ✅ Implementada |
+| Regra do corte anterior e regressão logística | ✅ Comparadas na validação de 2022 |
+| LightGBM, MLP, calibração e avaliação final | ⏳ A fazer |
 | Aplicação Streamlit | ⏳ A fazer |
 | Artigo SBC e vídeo | ⏳ A fazer |
 
@@ -85,7 +85,7 @@ tests/               testes automatizados
 
 ## Resultados
 
-_A preencher._
+Na validação de 2022, a regressão logística sem pesos teve a maior PR-AUC (0,6991). A versão com pesos balanceados teve o maior F1 (0,6016) com limiar de 0,5. [Relatório dos baselines](reports/baselines_2022.md)
 
 ## Aplicação
 

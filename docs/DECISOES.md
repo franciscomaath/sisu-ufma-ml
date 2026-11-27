@@ -14,11 +14,11 @@ arquivo em um commit próprio antes de mudar o código, para o registro continua
 | # | Tema | Decisão | Status |
 |---|---|---|---|
 | D1 | Alvo | `NOTA_SUFICIENTE = NOTA_CANDIDATO >= NOTA_CORTE` | Implementada |
-| D2 | Atributos | Lista explícita (allowlist) em `config.py` | Adotada, falta implementar |
+| D2 | Atributos | Lista explícita (allowlist) em `config.py` | Implementada |
 | D3 | Corte anterior ausente | NaN + indicador de ausência no Pipeline | Adotada |
 | D4 | Divisão | Temporal: treino 2018–2021, validação 2022, teste 2023 | Implementada |
-| D5 | Modelos | Regra + regressão logística (baselines), LightGBM, MLP | Adotada |
-| D6 | Desbalanceamento | Peso de classe, comparado na validação | Adotada |
+| D5 | Modelos | Regra + regressão logística (baselines), LightGBM, MLP | Baselines avaliados em 2022 |
+| D6 | Desbalanceamento | Peso de classe, comparado na validação | Comparado na regressão logística |
 | D7 | Métricas | Seleção por PR-AUC; Brier para calibração | Adotada |
 | D8 | Calibração e limiar | Ajustados em 2022 | Adotada |
 | D9 | Candidato repetido | Limitação declarada no artigo | Adotada |
@@ -71,7 +71,6 @@ Com `APROVADO` como alvo, o modelo aprenderia que a 2ª opção "atrapalha", qua
 ## D2. Atributos: lista explícita
 
 **Decisão.** Os atributos do modelo são definidos por uma **lista explícita** em `src/config.py`.
-A função `colunas_atributos()` atual exclui só o vazamento e deixaria passar colunas indevidas.
 
 **Atributos permitidos:**
 
@@ -105,8 +104,7 @@ ATRIBUTOS = ATRIBUTOS_NUMERICOS + ATRIBUTOS_CATEGORICOS
 para comparação, e reportar a diferença. Se melhorar a métrica, isso indica que o modelo estaria
 usando um atalho demográfico, o que é assunto para a discussão de vieses.
 
-**Implementar.** As listas acima em `config.py`; `colunas_atributos()` passa a retornar `config.ATRIBUTOS`;
-o teste de vazamento passa a checar a lista explícita.
+**Implementação.** `colunas_atributos()` verifica a presença das colunas obrigatórias e retorna os atributos na ordem de `config.ATRIBUTOS`. Os testes conferem a lista e a exclusão de colunas indevidas.
 
 ---
 

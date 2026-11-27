@@ -1,0 +1,4 @@
+abordagem,ano_validacao,pr_auc_ap,precisao,revocacao,f1
+Regra do corte anterior,2022,0.2987,0.8890,0.2722,0.4167
+Regressão logística sem pesos,2022,0.6991,0.9271,0.2523,0.3967
+Regressão logística com pesos balanceados,2022,0.6836,0.6661,0.5485,0.6016
