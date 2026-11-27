@@ -47,8 +47,8 @@ pip install -r requirements.txt
 python -m src.limpeza    # gera data/processed/sisu_limpo.parquet
 python -m src.features   # gera models/historico_cortes.parquet e mostra a cobertura por ano
 python -m src.baselines  # compara a regra e as regressões na validação de 2022
-python -m src.verificar_dados  # confere alvo, fórmula da nota, cortes e cobertura
-pytest -q                # testes
+python -m src.verificar_dados  # confere a preparação; grava em reports/conciliacao/
+pytest -q                # testes (os que usam o parquet real são pulados se ele não existir)
 ```
 
 ## Estado do projeto
@@ -58,6 +58,7 @@ pytest -q                # testes
 | Limpeza, histórico de cortes, divisão temporal e testes | ✅ Pronta (`reports/relatorio_etapa1.md`) |
 | Alvo `NOTA_SUFICIENTE` (D1) | ✅ Implementado |
 | Lista explícita de atributos (D2) | ✅ Implementada |
+| Nota do candidato (D12) e montagem compartilhada da entrada (D13) | ✅ Verificadas nos dados de 2017–2023 (`reports/relatorio_conciliacao.md`) |
 | Regra do corte anterior e regressão logística | ✅ Comparadas na validação de 2022 |
 | LightGBM, MLP, calibração e avaliação final | ⏳ A fazer |
 | Aplicação Streamlit | ⏳ A fazer |
