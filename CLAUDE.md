@@ -17,6 +17,9 @@ modalidade, a partir das notas do ENEM. Entrega única em **03/12/2026**.
 ```bash
 python -m src.limpeza   # CSV bruto -> data/processed/sisu_limpo.parquet
 python -m src.features  # histórico de cortes e cobertura por ano
+python -m src.particoes      # divisão de 2022 em A/B/C
+python -m src.exploracao     # figuras da análise exploratória (só treino)
+python -m src.experimentos   # busca em A, calibração em B/C e modelo salvo (não usa 2023)
 pytest -q               # todos os testes devem passar antes de cada commit
 ```
 
@@ -30,12 +33,16 @@ Estas regras protegem a nota. Violar qualquer uma delas é um erro grave, não u
    atributos. `NOTA_CORTE` só serve para construir o alvo e o histórico de cortes.
 2. **Atributos só da lista explícita** `config.ATRIBUTOS` (decisão D2). Não use "todas as colunas
    menos o vazamento": isso deixa passar `SEXO`, `IDADE` e municípios.
-3. **Divisão temporal, nunca aleatória.** Treino 2018–2021, validação 2022, teste 2023.
-   Nada de `train_test_split` sobre o conjunto inteiro.
+3. **Divisão temporal entre anos, nunca aleatória.** Treino 2018–2021, validação 2022, teste 2023.
+   Nada de `train_test_split` sobre o conjunto inteiro. Dentro de 2022, e só ali, as inscrições
+   rotuladas são divididas por grupo (`config.CHAVE_HISTORICO`) em A (partições 0–2: seleção de
+   modelo), B (partição 3: ajuste do calibrador) e C (partição 4: escolha da calibração e do
+   limiar), com `src/particoes.py` (D4 e D8). Não misture os papéis das partes.
 4. **Todo pré-processamento que aprende dos dados fica dentro de um `Pipeline` do sklearn**,
    ajustado só no treino. Escala, encoders e imputação nunca são ajustados em validação ou teste.
 5. **O teste (2023) é usado uma única vez**, depois que modelo, hiperparâmetros, calibração e
-   limiar foram escolhidos na validação. Não ajuste nada olhando o teste.
+   limiar foram escolhidos na validação. Não ajuste nada olhando o teste. C também não é teste: ela
+   foi usada para escolher a calibração e o limiar.
 6. **Semente 42** (`config.SEMENTE`) em tudo que for aleatório.
 7. **A aplicação não reimplementa o pré-processamento.** Ela carrega `models/pipeline_final.joblib`
    e usa a mesma função de montagem de entrada de `src/features.py` (decisão D13).
