@@ -16,12 +16,12 @@ arquivo em um commit próprio antes de mudar o código, para o registro continua
 | D1 | Alvo | `NOTA_SUFICIENTE = NOTA_CANDIDATO >= NOTA_CORTE` | Implementada |
 | D2 | Atributos | Lista explícita (allowlist) em `config.py` | Implementada e verificada nos dados |
 | D3 | Corte anterior ausente | NaN + indicador de ausência no Pipeline | Adotada |
-| D4 | Divisão | Temporal: treino 2018–2021, validação 2022, teste 2023 | Implementada |
-| D5 | Modelos | Regra + regressão logística (baselines), LightGBM, MLP | Baselines avaliados em 2022 |
+| D4 | Divisão | Temporal: treino 2018–2021, validação 2022 (A/B/C por grupo), teste 2023 | Implementada |
+| D5 | Modelos | Regra (`>=`) + regressão logística, LightGBM, MLP; busca registrada | Executada em A: logística `C=10`, sem peso |
 | D6 | Desbalanceamento | Peso de classe, comparado na validação | Comparado na regressão logística |
 | D7 | Métricas | Seleção por PR-AUC; Brier para calibração | Adotada |
-| D8 | Calibração e limiar | Ajustados em 2022 | Adotada; protocolo de calibração pendente |
-| D9 | Candidato repetido | Limitação declarada no artigo | Adotada |
+| D8 | Calibração e limiar | Calibrador ajustado em B; escolha e limiar em C | Executada: isotônica, limiar 0,3086 |
+| D9 | Candidato repetido | Limitação declarada no artigo, inclusive entre anos | Adotada |
 | D10 | Casos sem histórico | Aceitar a perda e declarar | Adotada |
 | D11 | Histórico de cortes | Parquet versionado no git | Implementada |
 | D12 | Nota do candidato | Calculada das 5 notas; 2 casas, meio centésimo para cima | Implementada; reproduz o CSV de 2017–2023 |
@@ -137,11 +137,32 @@ se melhorar a PR-AUC em 2022, e reportar no artigo de qualquer forma.
 |---|---|---|
 | Histórico | 2017 | Só alimenta o corte do ano anterior |
 | Treino | 2018–2021 | Ajuste do Pipeline e dos modelos |
-| Validação | 2022 | Hiperparâmetros, calibração, limiar, escolha do modelo |
+| Validação | 2022 | Dividida em A, B e C (abaixo) |
 | Teste | 2023 | **Avaliado uma única vez**, no final |
 
-Nunca usar divisão aleatória: o mesmo candidato aparece em duas linhas (opções 1 e 2) e o objetivo
-é prever anos futuros. Implementado em `src/split.py`.
+Nunca usar divisão aleatória **entre anos**: o mesmo candidato aparece em duas linhas (opções 1 e 2)
+e o objetivo é prever anos futuros. Implementado em `src/split.py`.
+
+**Divisão interna de 2022** (registrada em 27/11/2026, antes dos experimentos). As inscrições
+rotuladas de 2022 são distribuídas em cinco partições com
+`StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=42)`, estratificando por
+`NOTA_SUFICIENTE` e agrupando por `config.CHAVE_HISTORICO` (campus, curso, grau, turno, modalidade e
+edição). Todas as inscrições de uma mesma oferta e modalidade ficam, portanto, na mesma parte.
+
+| Parte | Partições | Uso |
+|---|---|---|
+| A | 0, 1 e 2 | Seleção de modelos e hiperparâmetros |
+| B | 3 | Ajuste dos calibradores |
+| C | 4 | Comparação da calibração e escolha do limiar |
+
+- As cinco partições só servem para construir A, B e C. **Não são cinco rodadas de validação
+  cruzada.** As proporções (cerca de 60%, 20% e 20%) são aproximadas, porque os grupos têm tamanhos
+  diferentes.
+- O mapeamento de grupos para partições fica salvo em `reports/experimentos/particoes_2022.csv`.
+- Para cada parte se registram grupos, linhas, positivos e negativos. Confere-se que não há grupo
+  nem linha em mais de uma parte e que as três têm as duas classes.
+- C serve para **escolher** a calibração e o limiar. Não é teste final: o teste continua sendo 2023.
+- Implementado em `src/particoes.py`.
 
 ---
 
@@ -152,18 +173,71 @@ Random Forest e LightGBM são da **mesma família** (ensemble de árvores), por 
 
 | Papel | Modelo | Família |
 |---|---|---|
-| Baseline 1 | Regra: suficiente se `NOTA_CANDIDATO > CORTE_ANO_ANTERIOR` (sem corte anterior: prever 0) | Regra |
+| Baseline 1 | Regra: suficiente se `NOTA_CANDIDATO >= CORTE_ANO_ANTERIOR` (sem corte anterior: prever 0) | Regra |
 | Baseline 2 | Regressão logística | Linear |
 | Modelo 1 | LightGBM | Ensemble de árvores |
 | Modelo 2 | Rede neural MLP (`MLPClassifier` com early stopping) | Rede neural |
 
-SVM não é viável com ~560 mil linhas de treino. Se a MLP for lenta, pode treinar em subamostra
-estratificada do treino, com semente fixa e documentada.
+SVM não é viável com as 644.845 linhas rotuladas do treino. Se a MLP for lenta, pode treinar em
+subamostra estratificada do treino, com semente fixa e documentada (regra abaixo).
 
 A regra do Baseline 1 é o adversário principal: o modelo de ML precisa superá-la. Se não superar,
 isso também é um resultado e deve ser discutido com honestidade no artigo.
 
-A regra usa `>` e o alvo usa `>=` (D1). A diferença está registrada na proposta P3.
+**Regra com `>=` (adotada em 27/11/2026, resolve a P3).** A regra passa a usar `>=`, como o alvo
+(D1). Os resultados publicados em `reports/baselines_2022.md` foram obtidos com `>` no commit
+`179593a`, sobre toda a validação de 2022, e ficam como registro histórico: não são comparáveis aos
+números em A.
+
+### Protocolo de comparação (registrado antes das execuções)
+
+**Dados.** Todos os modelos são ajustados nas inscrições rotuladas de 2018–2021 e avaliados nas
+**mesmas** linhas de A (D4). As entradas vêm de `montar_entrada_treino`, com o histórico de cortes
+de 2017–2021. O pré-processamento aprendido (imputação pela mediana com indicador, padronização e
+one-hot, como nos baselines) faz parte de cada `Pipeline` e é ajustado só nas linhas de treino
+daquele modelo.
+
+**Métricas em A.** Seleção por *average precision* (AP, D7). Também se registram ROC-AUC e Brier
+(sem recalibração), e precisão, revocação e F1 com limiar 0,5, só como informação.
+
+**Regra histórica.**
+- Métricas de **decisão**: precisão, revocação e F1 da saída 0/1.
+- Métricas de **ranking** (AP e ROC-AUC): escore contínuo `DIF_CORTE_ANTERIOR`. Sem corte anterior,
+  o escore é −10.000, abaixo de qualquer diferença possível (as notas ficam entre 0 e cerca de
+  1.050). Esses casos ficam empatados no fim da ordenação.
+- A AP da saída 0/1 também é registrada, para comparação com o relatório publicado.
+
+**Busca de hiperparâmetros** (grade completa, semente 42 em tudo):
+
+| Modelo | Fixos | Grade | Configurações |
+|---|---|---|---|
+| Regressão logística | `solver="liblinear"`, `max_iter=1000` | `C` ∈ {0,1; 1; 10} × `class_weight` ∈ {nenhum, `"balanced"`} | 6 |
+| LightGBM | `n_estimators=400`, `learning_rate=0,05` | `num_leaves` ∈ {15, 63} × `min_child_samples` ∈ {20, 200} × `scale_pos_weight` ∈ {1, negativos/positivos do treino} | 8 |
+| MLP | `adam`, `learning_rate_init=0,001`, `batch_size=512`, `max_iter=50`, `early_stopping=True`, `validation_fraction=0,1`, `n_iter_no_change=5` | `hidden_layer_sizes` ∈ {(64,), (128, 64)} × `alpha` ∈ {0,0001; 0,001} × peso de classe ∈ {nenhum, balanceado} | 8 |
+
+Na MLP, o peso balanceado é passado como `sample_weight` (n / (2 · contagem da classe)), porque o
+`MLPClassifier` não tem `class_weight`. O early stopping separa 10% do treino da própria MLP; essa
+parte não vem de 2022.
+
+**Ensaio de custo da MLP.** Antes da busca, ajusta-se a maior configuração ((128, 64), sem peso) numa
+subamostra estratificada de 50.000 linhas do treino e mede-se o tempo. A projeção para o treino
+completo é esse tempo × 644.845 / 50.000 por configuração. Se a projeção das 8 configurações passar
+de 40 minutos, toda a busca da MLP usa uma subamostra estratificada de **200.000** linhas do treino
+(`StratifiedShuffleSplit`, semente 42), a mesma para as 8 configurações. O pré-processamento da MLP é
+ajustado nessa subamostra.
+
+**Seleção.** Escolhe-se a configuração aprendida (logística, LightGBM ou MLP) com maior AP em A. Em
+empate até a quarta casa, vence a maior ROC-AUC. A regra não é candidata: é a referência.
+
+Também se registram o tempo de ajuste, o tempo de predição em A e os avisos de convergência de cada
+configuração. Todos os resultados são reportados, inclusive os inferiores à regra.
+
+Implementado em `src/modelos.py` e `src/experimentos.py`.
+
+**Resultado** (27/11/2026, `reports/relatorio_experimentos_2022.md`): o ensaio projetou 8,6 minutos
+para a grade da MLP, abaixo do limite, e a MLP usou o treino completo. Selecionada a regressão
+logística com `C=10` e sem peso de classe (AP 0,7158 em A, contra 0,5171 da regra). `C=10` está
+na borda da grade; a grade não foi ampliada depois de ver os resultados.
 
 ---
 
@@ -201,27 +275,40 @@ Comparar, na validação, o modelo com e sem peso de classe (`class_weight="bala
 inscrições caem. Com 4,50% de positivos no treino, espera-se que o modelo **subestime** as
 probabilidades em 2022–2023 (ainda a conferir na validação).
 
-**Decisão.**
-- Recalibrar o modelo escolhido **em 2022**, cuja taxa é parecida com a de 2023. Comparar Platt
-  (sigmoid) e isotônica pelo Brier score.
-- Escolher o limiar de decisão em 2022 (maximizando F1) e congelá-lo antes do teste.
-- Mostrar a curva de calibração antes e depois no artigo.
+**Decisão** (protocolo adotado em 27/11/2026, antes dos experimentos; usa as partes A, B e C de
+2022 da D4).
+
+1. O modelo escolhido em A fica **congelado**: classificador e pré-processamento não são reajustados.
+2. Sigmoid (Platt) e isotônica são ajustadas **só em B**, com
+   `CalibratedClassifierCV(FrozenEstimator(modelo), method=...)`. Com o estimador congelado, o
+   sklearn ajusta um único calibrador sobre todo o B, na escala de `decision_function` (conferido
+   antes dos experimentos).
+3. Em C se comparam três opções: sem recalibração, sigmoid e isotônica. Vence o **menor Brier em C**,
+   acompanhado da curva de calibração das três.
+4. O limiar é o que **maximiza o F1 em C** para a opção escolhida.
+5. C foi usada para escolher, não para estimar o desempenho final. Depois dessas escolhas, nada é
+   reajustado sem revisar este protocolo. A avaliação em 2023 fica pendente.
 
 A aplicação mostra a **probabilidade calibrada**, por isso a calibração é parte central do trabalho,
 e não um detalhe.
 
-**Pendente: protocolo de calibração.** O texto acima, junto com a D4, usa 2022 para escolher
-hiperparâmetros e modelo, ajustar o calibrador, comparar os calibradores pelo Brier e escolher o
-limiar. Comparar nas mesmas observações usadas no ajuste favorece resultados otimistas, sobretudo
-para a isotônica. A equipe ainda precisa decidir o protocolo, antes de treinar o modelo final.
+Implementado em `src/experimentos.py`.
+
+**Resultado** (27/11/2026): em C, Brier 0,0525 sem recalibração, 0,0385 com sigmoid e 0,0382 com
+isotônica. Pela regra, venceu a isotônica, por 0,0002; ela tem AP e log loss piores que a sigmoid
+em C (relatório dos experimentos). Limiar de maior F1 em C: 0,3086 (F1 0,6156). Avaliação em
+2023 pendente.
 
 ---
 
 ## D9. Candidato repetido
 
-O mesmo candidato pode aparecer nas opções 1 e 2 e o dado não tem identificador pessoal. A divisão
-por ano evita que a mesma pessoa esteja no treino e no teste, mas as linhas não são independentes
-dentro de um ano. Declarar como limitação. `OPCAO` entra como atributo.
+O mesmo candidato pode aparecer nas opções 1 e 2, e o dado não tem identificador pessoal. A divisão
+por ano separa os processos seletivos no tempo, mas **não comprova que as pessoas sejam diferentes**
+entre treino, validação e teste: quem se inscreveu em mais de um ano aparece em mais de um conjunto.
+Dentro de um ano, as linhas também não são independentes; na divisão interna de 2022 (D4), as duas
+opções de uma pessoa podem cair em partes diferentes. Declarar as duas coisas como limitação.
+`OPCAO` entra como atributo. (Corrigido em 27/11/2026; resolve a P4.)
 
 ---
 
@@ -333,35 +420,21 @@ chamando a montagem com `ano_alvo` igual a esse ano mais 1 (2024). Com `ano_alvo
 corte de N−1 e os dois atributos ficam ausentes. O desempenho para edições posteriores a 2023 não
 foi validado, e a aplicação precisa informar isso.
 
-**Enquanto o modelo final não existir,** a aplicação pode usar um `pipeline_final.joblib` provisório
-(por exemplo, uma regressão logística simples) com as mesmas colunas de entrada.
+**Modelo escolhido na validação (27/11/2026).** `models/pipeline_final.joblib` (não versionado; gerado
+por `python -m src.experimentos`) e `models/metadados.json` existem. A avaliação em 2023 está pendente
+e marcada nos metadados.
 
 ---
 
-## Propostas em aberto (aguardam a equipe)
+## Propostas resolvidas
 
-Nada nesta seção foi adotado: o código, o alvo e as decisões acima continuam como estão.
-P1 (arredondamento da nota) e P2 (taxas do alvo atual) foram aplicadas em D12 e em D6–D8 em
-27/11/2026. O protocolo de calibração também está em aberto (D8).
-
-### P3. D5: a regra usa `>`, o alvo usa `>=`
-
-**Situação.** A regra publicada prevê 1 quando `NOTA_CANDIDATO > CORTE_ANO_ANTERIOR`
-(`src/baselines.py`, `reports/baselines_2022.md`). O commit `68a3e06` propunha `>=`, como no alvo.
-A proposta não foi adotada, para o texto não se separar do código e dos resultados publicados.
-Entre as linhas com alvo e corte anterior, a nota é igual a esse corte em 4 (2018), 7 (2019),
-3 (2020), 9 (2021) e 3 (2022) linhas.
-
-**Se a equipe adotar `>=`:** mudar D5 e o código e executar os baselines de novo, registrando o
-resultado ao lado do publicado, sem substituí-lo.
-
-### P4. D9: a divisão por ano não garante pessoas diferentes
-
-**Situação.** A D9 afirma que a divisão por ano evita que a mesma pessoa esteja no treino e no
-teste. Os dados não têm identificador, e uma pessoa pode se inscrever em anos diferentes.
-
-**Proposta.** Dizer que a divisão separa os processos seletivos no tempo, mas não garante que as
-pessoas sejam distintas, e declarar isso como limitação.
+- **P1** (arredondamento da nota) e **P2** (taxas do alvo atual): aplicadas em D12 e D6–D8.
+- **P3** (regra com `>=`): adotada na D5 em 27/11/2026. Na validação de 2022 a nota é igual ao corte
+  anterior em 3 linhas rotuladas. A regra com `>=` é avaliada em A, junto com os modelos; os
+  baselines sobre toda a validação de 2022 não foram executados de novo, para não usar B e C fora do
+  protocolo da D8.
+- **P4** (D9 e pessoas repetidas entre anos): texto corrigido na D9.
+- **Protocolo de calibração:** definido na D8.
 
 ---
 

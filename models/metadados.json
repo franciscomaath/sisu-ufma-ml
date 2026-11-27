@@ -1,0 +1,150 @@
+{
+  "gerado_em": "2026-11-27T14:48:00+00:00",
+  "codigo": {
+    "commit": "1f58bda8264f6661fe38033006b556bce8ae2e73",
+    "alteracoes_nao_commitadas": false
+  },
+  "versoes": {
+    "python": "3.13.17",
+    "scikit-learn": "1.9.1",
+    "lightgbm": "4.7.0",
+    "pandas": "3.1.1",
+    "numpy": "2.5.5",
+    "joblib": "1.6.0"
+  },
+  "semente": 42,
+  "arquivo_modelo": "pipeline_final.joblib",
+  "uso": "predict_proba(montar_entrada_inferencia(entrada, historico, ano_alvo))[:, 1]",
+  "atributos": [
+    "NOTA_L",
+    "NOTA_CH",
+    "NOTA_CN",
+    "NOTA_M",
+    "NOTA_R",
+    "NOTA_CANDIDATO",
+    "PERCENTUAL_BONUS",
+    "CORTE_ANO_ANTERIOR",
+    "DIF_CORTE_ANTERIOR",
+    "TEM_NOTA_ZERO",
+    "CODIGO_CAMPUS",
+    "NOME_CURSO_NORM",
+    "GRAU",
+    "TURNO",
+    "MODALIDADE",
+    "EDICAO",
+    "OPCAO"
+  ],
+  "atributos_numericos": [
+    "NOTA_L",
+    "NOTA_CH",
+    "NOTA_CN",
+    "NOTA_M",
+    "NOTA_R",
+    "NOTA_CANDIDATO",
+    "PERCENTUAL_BONUS",
+    "CORTE_ANO_ANTERIOR",
+    "DIF_CORTE_ANTERIOR",
+    "TEM_NOTA_ZERO"
+  ],
+  "atributos_categoricos": [
+    "CODIGO_CAMPUS",
+    "NOME_CURSO_NORM",
+    "GRAU",
+    "TURNO",
+    "MODALIDADE",
+    "EDICAO",
+    "OPCAO"
+  ],
+  "colunas_entrada": [
+    "CODIGO_CAMPUS",
+    "NOME_CURSO_NORM",
+    "GRAU",
+    "TURNO",
+    "MODALIDADE",
+    "EDICAO",
+    "OPCAO",
+    "PERCENTUAL_BONUS",
+    "NOTA_L",
+    "NOTA_CH",
+    "NOTA_CN",
+    "NOTA_M",
+    "NOTA_R"
+  ],
+  "modelo": {
+    "familia": "logistica",
+    "parametros": {
+      "C": 10.0,
+      "peso": null
+    },
+    "anos_treino": [
+      2018,
+      2019,
+      2020,
+      2021
+    ],
+    "historico_de_cortes_no_treino": [
+      2017,
+      2018,
+      2019,
+      2020,
+      2021
+    ]
+  },
+  "calibracao": {
+    "opcao": "Isotônica",
+    "ajustada_em": "B (partição 3 de 2022)",
+    "escolhida_em": "C (partição 4 de 2022), pelo menor Brier"
+  },
+  "limiar": 0.3086053412462908,
+  "limiar_criterio": "maior F1 em C",
+  "divisao_validacao": {
+    "arquivo": "reports/experimentos/particoes_2022.csv",
+    "sha256": "c465dd2c2add6644f9f2103642f2c59c02feb6160c2d764d2e04393bb83cc96c",
+    "tamanhos": {
+      "treino": {
+        "linhas": 644845,
+        "positivos": 29034
+      },
+      "A": {
+        "linhas": 55056,
+        "positivos": 4295
+      },
+      "B": {
+        "linhas": 18346,
+        "positivos": 1430
+      },
+      "C": {
+        "linhas": 18348,
+        "positivos": 1429
+      }
+    }
+  },
+  "metricas_validacao": {
+    "A_selecao": {
+      "ap": 0.7157950443421697,
+      "roc_auc": 0.9604858982262034
+    },
+    "C_escolha": {
+      "brier": 0.038237121052567935,
+      "log_loss": 0.1348860638495535,
+      "ap": 0.6909437136309724,
+      "roc_auc": 0.9638908906558484,
+      "media_prevista": 0.06927122357114382,
+      "taxa_observada": 0.07788314802703292,
+      "f1_no_limiar": 0.6156167483968314
+    },
+    "aviso": "A e C foram usadas para escolher; não são estimativas de desempenho final."
+  },
+  "metricas_teste": {
+    "status": "pendente",
+    "ano": [
+      2023
+    ]
+  },
+  "historico_aplicacao": {
+    "arquivo": "historico_cortes.parquet",
+    "ultimo_ano": 2023,
+    "ano_alvo_previsto": 2024
+  },
+  "recarga_preserva_probabilidades": true
+}
