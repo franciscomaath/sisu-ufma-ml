@@ -1,17 +1,24 @@
 """Verifica a preparação dos dados reais, sem alterar dados, alvo ou histórico.
 
-Não treina modelos nem calcula métricas de desempenho. Gera tabelas em `reports/`.
+Não treina modelos nem calcula métricas de desempenho. Gera tabelas em `reports/conciliacao/`.
 Uso: python -m src.verificar_dados (depois de python -m src.limpeza).
 """
 import numpy as np
 import pandas as pd
 
 from src import config
-from src.features import adicionar_corte_anterior, construir_historico
+from src.features import (
+    COLUNAS_ENTRADA, adicionar_corte_anterior, calcular_nota_candidato, calcular_nota_centesimos,
+    colunas_atributos, construir_historico, montar_entrada_inferencia, montar_entrada_treino,
+)
 from src.limpeza import NOTAS_PROVAS
 
-DIR_RELATORIOS = config.RAIZ / "reports"
+DIR_RELATORIOS = config.RAIZ / "reports" / "conciliacao"
 COLUNAS_CORTE = ["CORTE_ANO_ANTERIOR", "DIF_CORTE_ANTERIOR"]
+COLUNAS_PROIBIDAS = config.COLUNAS_VAZAMENTO + [
+    config.ALVO, "APROVADO", "ANO", "SEXO", "IDADE", "UF_CANDIDATO", "MUNICIPIO_CANDIDATO",
+    "MUNICIPIO_CAMPUS", "GRUPO_CONCORRENCIA",
+]
 TAMANHO_AMOSTRA = 1000
 TOLERANCIA = 1e-9  # abaixo disso, a diferença é ruído de ponto flutuante
 
@@ -58,31 +65,12 @@ def resumo_sem_alvo(df: pd.DataFrame) -> pd.DataFrame:
     return t.astype("int64").reset_index()
 
 
-def calcular_nota_centesimos(df: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
-    """Nota em centésimos, em aritmética inteira, com arredondamento "meio para cima".
-
-    Retorna (centésimos, empate). `empate` marca as notas exatamente no meio de dois
-    centésimos. Exige notas com no máximo 1 casa decimal e bônus inteiro, sem ausentes.
-    """
-    decimos = df[NOTAS_PROVAS] * 10
-    bonus = df["PERCENTUAL_BONUS"]
-    if decimos.isna().any().any() or bonus.isna().any():
-        raise ValueError("Há notas ou bônus ausentes.")
-    if not np.allclose(decimos, decimos.round(), rtol=0, atol=1e-6) or not (bonus == bonus.round()).all():
-        raise ValueError("A conta exata exige notas com 1 casa decimal e bônus inteiro.")
-    soma = decimos.round().astype("int64").sum(axis=1)
-    # nota = soma/10/5 * (100 + bônus)/100  ->  centésimos = soma * (100 + bônus) / 50
-    numerador = soma * (100 + bonus.round().astype("int64"))
-    return (numerador + 25) // 50, (numerador % 50) == 25
-
-
 def regras_de_calculo(df: pd.DataFrame) -> dict[str, pd.Series]:
     """Variantes da fórmula da D12, para comparar com a nota original."""
     sem_arredondar = df[NOTAS_PROVAS].mean(axis=1, skipna=False) * (1 + df["PERCENTUAL_BONUS"] / 100)
-    centesimos, _ = calcular_nota_centesimos(df)
     return {
         "Sem arredondar": sem_arredondar,
-        "Meio para cima, 2 casas (conta inteira)": centesimos / 100,
+        "Meio para cima, 2 casas (conta inteira)": calcular_nota_candidato(df),
         "round(2) do pandas": sem_arredondar.round(2),
         "Truncar em 2 casas": np.floor(sem_arredondar * 100 + 1e-7) / 100,
     }
@@ -110,17 +98,17 @@ def comparar_formula(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(linhas)
 
 
-def formula_por_ano(df: pd.DataFrame) -> pd.DataFrame:
-    """Por ano: efeito de não arredondar e empates no meio do centésimo."""
-    regras = regras_de_calculo(df)
-    sem = regras["Sem arredondar"]
+def equivalencia_da_nota(df: pd.DataFrame) -> pd.DataFrame:
+    """Nota da função compartilhada contra a original, com igualdade exata, por ano."""
+    recalculada = calcular_nota_candidato(df)
     _, empate = calcular_nota_centesimos(df)
     base = pd.DataFrame({
         "ANO": df["ANO"],
-        "divergentes_sem_arredondar": (sem - df["NOTA_CANDIDATO"]).abs() > TOLERANCIA,
-        "alvo_mudaria_sem_arredondar": (df["NOTA_CANDIDATO"] >= df["NOTA_CORTE"]) & (sem < df["NOTA_CORTE"]),
+        "linhas": 1,
+        "diferentes": recalculada.ne(df["NOTA_CANDIDATO"]),
         "empates_meio_centesimo": empate,
-        "divergentes_round2": (regras["round(2) do pandas"] - df["NOTA_CANDIDATO"]).abs() > TOLERANCIA,
+        "alvo_diferente": df[config.ALVO].notna() & (
+            recalculada.ge(df["NOTA_CORTE"]) != df["NOTA_CANDIDATO"].ge(df["NOTA_CORTE"])),
     })
     return base.groupby("ANO").sum().astype("int64").reset_index()
 
@@ -159,55 +147,173 @@ def cobertura_detalhada(montado: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(linhas)
 
 
-def _linhas_diferentes(a: pd.DataFrame, b: pd.DataFrame, tolerancia: float = 0.0) -> int:
-    """Número de linhas em que alguma coluna de corte difere (NaN igual a NaN)."""
-    x = a[COLUNAS_CORTE].to_numpy(dtype=float)
-    y = b[COLUNAS_CORTE].to_numpy(dtype=float)
-    iguais = (np.abs(x - y) <= tolerancia) | (np.isnan(x) & np.isnan(y))
-    return int((~iguais.all(axis=1)).sum())
+def linhas_diferentes(a: pd.DataFrame, b: pd.DataFrame) -> int:
+    """Linhas em que alguma coluna difere, comparando por posição (ausente igual a ausente)."""
+    if list(a.columns) != list(b.columns) or len(a) != len(b):
+        raise ValueError("As tabelas comparadas têm colunas ou tamanhos diferentes.")
+    x, y = a.reset_index(drop=True), b.reset_index(drop=True)
+    iguais = x.eq(y) | (x.isna() & y.isna())
+    return int((~iguais).any(axis=1).sum())
 
 
-def consistencia_montagem(df: pd.DataFrame, versionado: pd.DataFrame,
-                          tamanho_amostra: int = TAMANHO_AMOSTRA) -> pd.DataFrame:
-    """Compara a montagem em lote (treino) com cenários que imitam a inferência.
+def consistencia_treino_inferencia(df: pd.DataFrame, versionado: pd.DataFrame,
+                                   tamanho_amostra: int = TAMANHO_AMOSTRA) -> pd.DataFrame:
+    """Compara as entradas de treino com as de inferência, nas 17 colunas.
 
-    Usa só `adicionar_corte_anterior`: não há função de montagem de inferência a testar.
+    A inferência recebe só COLUNAS_ENTRADA (o que a aplicação teria) e usa o histórico
+    versionado; o treino usa o histórico reconstruído do parquet.
     """
-    historico = construir_historico(df)
-    lote = adicionar_corte_anterior(df, historico)
-    resultados = []
-
-    def registrar(nome: str, comparadas: int, diferentes: int, acima: int | None = None) -> None:
-        resultados.append({"verificacao": nome, "linhas_comparadas": comparadas,
-                           "linhas_diferentes": diferentes,
-                           "acima_de_1e-9": diferentes if acima is None else acima})
-
-    registrar("Histórico versionado x reconstruído (montagem em lote)",
-              len(df), _linhas_diferentes(lote, adicionar_corte_anterior(df, versionado)))
-
-    comparadas = diferentes = 0
-    for ano in sorted(df["ANO"].unique()):
-        mascara = df["ANO"] == ano
-        so_passado = adicionar_corte_anterior(df[mascara], historico[historico["ANO"] < ano])
-        comparadas += int(mascara.sum())
-        diferentes += _linhas_diferentes(lote[mascara.to_numpy()], so_passado)
-    registrar("Histórico completo x só anos anteriores", comparadas, diferentes)
+    treino = montar_entrada_treino(df, construir_historico(df))
+    do_parquet = [c for c in config.ATRIBUTOS if c not in COLUNAS_CORTE]
+    linhas = []
+    for ano, posicoes in df.groupby("ANO").indices.items():
+        referencia = treino.iloc[posicoes]
+        inferida = montar_entrada_inferencia(df.iloc[posicoes][COLUNAS_ENTRADA], versionado, int(ano))
+        linhas.append({
+            "cenario": str(ano),
+            "linhas": len(posicoes),
+            "treino_x_inferencia": linhas_diferentes(referencia, inferida),
+            "tipos_e_indice_iguais": "sim" if referencia.dtypes.equals(inferida.dtypes)
+            and referencia.index.equals(inferida.index) else "não",
+            "treino_x_parquet": linhas_diferentes(df.iloc[posicoes][do_parquet], referencia[do_parquet]),
+        })
 
     posicoes = pd.Series(np.arange(len(df))).sample(
         n=min(tamanho_amostra, len(df)), random_state=config.SEMENTE).to_numpy()
-    uma_a_uma = pd.concat(
-        [adicionar_corte_anterior(df.iloc[[i]], versionado) for i in posicoes], ignore_index=True)
-    registrar("Lote x uma inscrição por vez (amostra)",
-              len(posicoes), _linhas_diferentes(lote.iloc[posicoes], uma_a_uma))
+    diferentes = tipos_diferentes = 0
+    for i in posicoes:
+        # reconstrói a inscrição a partir de valores soltos, como faria um formulário
+        registro = df.iloc[[i]][COLUNAS_ENTRADA].to_dict("records")[0]
+        inferida = montar_entrada_inferencia(
+            pd.DataFrame([registro], index=[df.index[i]]), versionado, int(df["ANO"].iat[i]))
+        diferentes += linhas_diferentes(treino.iloc[[i]], inferida)
+        tipos_diferentes += not treino.iloc[[i]].dtypes.equals(inferida.dtypes)
+    linhas.append({"cenario": "Amostra, uma inscrição por vez", "linhas": len(posicoes),
+                   "treino_x_inferencia": diferentes,
+                   "tipos_e_indice_iguais": "sim" if tipos_diferentes == 0 else "não",
+                   "treino_x_parquet": "-"})
+    return pd.DataFrame(linhas)
 
-    regras = regras_de_calculo(df)
-    for nome in ["Meio para cima, 2 casas (conta inteira)", "Sem arredondar"]:
-        recalculado = df.assign(NOTA_CANDIDATO=regras[nome])
-        montado = adicionar_corte_anterior(recalculado, versionado)
-        registrar(f"Nota original x recalculada: {nome.lower()}", len(df),
-                  _linhas_diferentes(lote, montado),
-                  _linhas_diferentes(lote, montado, TOLERANCIA))
-    return pd.DataFrame(resultados)
+
+def corte_por_consulta_direta(df: pd.DataFrame) -> pd.Series:
+    """Segunda implementação do corte N−1, sem `merge` nem `construir_historico`."""
+    chave = config.CHAVE_HISTORICO + ["ANO"]
+    preenchidos = df[chave + ["NOTA_CORTE"]].dropna(subset=["NOTA_CORTE"]).drop_duplicates()
+    cortes = {linha[:-1]: linha[-1] for linha in preenchidos.itertuples(index=False, name=None)}
+    valores = [cortes.get((*linha[:-1], linha[-1] - 1), np.nan)
+               for linha in df[chave].itertuples(index=False, name=None)]
+    return pd.Series(valores, index=df.index, dtype="float64")
+
+
+def uso_do_ano_anterior(df: pd.DataFrame) -> pd.DataFrame:
+    """Evidências de que só o corte de N−1 influencia as entradas de cada ano N."""
+    historico = construir_historico(df)
+    treino = montar_entrada_treino(df, historico)
+    direta = corte_por_consulta_direta(df)
+    linhas = []
+    for ano, posicoes in df.groupby("ANO").indices.items():
+        entrada, referencia = df.iloc[posicoes], treino.iloc[posicoes]
+        e_anterior = historico["ANO"] == ano - 1
+        adulterado = historico.assign(
+            CORTE_ANO_ANTERIOR=historico["CORTE_ANO_ANTERIOR"].where(e_anterior, -1.0))
+        sem_anterior = montar_entrada_inferencia(entrada, historico[~e_anterior], int(ano))
+        linhas.append({
+            "ANO": ano,
+            "linhas": len(posicoes),
+            "so_historico_n_1": linhas_diferentes(
+                referencia, montar_entrada_inferencia(entrada, historico[e_anterior], int(ano))),
+            "outros_anos_adulterados": linhas_diferentes(
+                referencia, montar_entrada_inferencia(entrada, adulterado, int(ano))),
+            "corte_do_proprio_ano_adulterado": linhas_diferentes(
+                referencia, montar_entrada_treino(entrada.assign(NOTA_CORTE=-1.0), historico)),
+            "consulta_direta": linhas_diferentes(
+                referencia[["CORTE_ANO_ANTERIOR"]],
+                direta.iloc[posicoes].to_frame("CORTE_ANO_ANTERIOR")),
+            "com_corte_sem_historico_n_1": int(sem_anterior["CORTE_ANO_ANTERIOR"].notna().sum()),
+        })
+    return pd.DataFrame(linhas)
+
+
+def atributos_nas_entradas(df: pd.DataFrame, entradas: pd.DataFrame) -> pd.DataFrame:
+    """Presença de cada coluna proibida no parquet e nas entradas montadas."""
+    if list(entradas.columns) != colunas_atributos(entradas):
+        raise ValueError("As entradas não têm exatamente os atributos da D2, na ordem.")
+    return pd.DataFrame([{
+        "coluna_proibida": coluna,
+        "no_parquet": "sim" if coluna in df.columns else "não",
+        "nas_entradas": "sim" if coluna in entradas.columns else "não",
+    } for coluna in COLUNAS_PROIBIDAS])
+
+
+def sem_historico(df: pd.DataFrame) -> pd.DataFrame:
+    """Por ano: linhas sem corte anterior, o motivo e como as entradas ficam."""
+    historico = construir_historico(df)
+    entradas = montar_entrada_treino(df, historico)
+    chave = config.CHAVE_HISTORICO + ["ANO"]
+    seguinte = historico.assign(ANO=historico["ANO"] + 1)
+    existe = pd.Series(pd.MultiIndex.from_frame(df[chave]).isin(pd.MultiIndex.from_frame(seguinte[chave])),
+                       index=df.index)
+    sem_corte = entradas["CORTE_ANO_ANTERIOR"].isna()
+    base = pd.DataFrame({
+        "ANO": df["ANO"],
+        "linhas": 1,
+        "sem_corte": sem_corte,
+        "chave_inexistente_em_n_1": ~existe,
+        "chave_sem_valor_em_n_1": existe & sem_corte,
+        "corte_e_dif_incoerentes": sem_corte != entradas["DIF_CORTE_ANTERIOR"].isna(),
+        "outros_atributos_ausentes": entradas.drop(columns=COLUNAS_CORTE).isna().any(axis=1),
+    })
+    return base.groupby("ANO").sum().astype("int64").reset_index()
+
+
+def cenarios_sem_historico(df: pd.DataFrame, versionado: pd.DataFrame) -> pd.DataFrame:
+    """Inferência com as inscrições do último ano em situações sem histórico (e no ano seguinte)."""
+    ultimo = int(df["ANO"].max())
+    entrada = df[df["ANO"] == ultimo][COLUNAS_ENTRADA]
+    cenarios = [
+        (f"Ano-alvo {ultimo + 1} (usa o corte de {ultimo})", entrada, ultimo + 1),
+        (f"Ano-alvo {ultimo + 7}, sem histórico de N−1", entrada, ultimo + 7),
+        ("Campus que não existe no histórico", entrada.assign(CODIGO_CAMPUS=-1), ultimo + 1),
+    ]
+    linhas = []
+    for nome, tabela, ano_alvo in cenarios:
+        saida = montar_entrada_inferencia(tabela, versionado, ano_alvo)
+        linhas.append({"cenario": nome, "linhas": len(saida),
+                       "com_corte": int(saida["CORTE_ANO_ANTERIOR"].notna().sum()),
+                       "sem_corte": int(saida["CORTE_ANO_ANTERIOR"].isna().sum())})
+    return pd.DataFrame(linhas)
+
+
+def entradas_dos_baselines(df: pd.DataFrame) -> pd.DataFrame:
+    """Compara a entrada dos baselines publicados (179593a) com a montagem compartilhada."""
+    historico = construir_historico(df[df["ANO"].isin(config.ANOS_HISTORICO + config.ANOS_TREINO)])
+    linhas = []
+    for nome, anos in [("Treino", config.ANOS_TREINO), ("Validação", config.ANOS_VALIDACAO)]:
+        inscricoes = df[df["ANO"].isin(anos)].dropna(subset=[config.ALVO])
+        # caminho anterior: junção direta, usando a NOTA_CANDIDATO do CSV
+        anterior = adicionar_corte_anterior(inscricoes, historico)
+        antiga = anterior[colunas_atributos(anterior)]
+        nova = montar_entrada_treino(inscricoes, historico)
+        linhas.append({
+            "conjunto": nome,
+            "linhas": len(inscricoes),
+            "linhas_diferentes": linhas_diferentes(antiga, nova),
+            "tipos_iguais": "sim" if antiga.dtypes.equals(nova.dtypes) else "não",
+        })
+    return pd.DataFrame(linhas)
+
+
+def empates_com_corte_anterior(df: pd.DataFrame) -> pd.DataFrame:
+    """Linhas de treino e validação em que a regra `>` e a `>=` discordam (nota igual ao corte)."""
+    anos = config.ANOS_TREINO + config.ANOS_VALIDACAO
+    rotuladas = df[df["ANO"].isin(anos)].dropna(subset=[config.ALVO])
+    entradas = montar_entrada_treino(rotuladas, construir_historico(df[df["ANO"] < max(anos)]))
+    base = pd.DataFrame({
+        "ANO": rotuladas["ANO"],
+        "com_corte": entradas["CORTE_ANO_ANTERIOR"].notna(),
+        "nota_igual_ao_corte_anterior": entradas["NOTA_CANDIDATO"].eq(entradas["CORTE_ANO_ANTERIOR"]),
+    })
+    return base.groupby("ANO").sum().astype("int64").reset_index()
 
 
 def tabela_markdown(t: pd.DataFrame) -> str:
@@ -230,21 +336,31 @@ def main() -> None:
     df = pd.read_parquet(config.PARQUET_LIMPO)
     versionado = pd.read_parquet(config.HISTORICO_CORTES)
     historico = construir_historico(df)
+    entradas = montar_entrada_treino(df, historico)
 
     por_ano = contagens_alvo(df)
     conflitos = pd.DataFrame(conflitos_de_corte(df).items(), columns=["verificacao", "quantidade"])
     igual = "sim" if historico.equals(versionado) else "não"
+    com_corte = df.assign(CORTE_ANO_ANTERIOR=entradas["CORTE_ANO_ANTERIOR"])
 
     secoes = [
         ("Alvo por ano", "alvo_por_ano", por_ano),
         ("Alvo por conjunto", "alvo_por_conjunto", contagens_por_conjunto(por_ano)),
         ("Linhas sem alvo", "sem_alvo", resumo_sem_alvo(df)),
         ("Fórmula da nota: regras comparadas", "formula_regras", comparar_formula(df)),
-        ("Fórmula da nota: efeito por ano", "formula_por_ano", formula_por_ano(df)),
+        ("Nota da função compartilhada x original", "nota_equivalencia", equivalencia_da_nota(df)),
         ("Cortes por chave", "conflitos_corte", conflitos),
-        ("Cobertura do corte anterior", "cobertura", cobertura_detalhada(
-            adicionar_corte_anterior(df, historico))),
-        ("Montagem em lote x cenários de inferência", "montagem", consistencia_montagem(df, versionado)),
+        ("Cobertura do corte anterior", "cobertura", cobertura_detalhada(com_corte)),
+        ("Entradas de treino x inferência", "treino_inferencia",
+         consistencia_treino_inferencia(df, versionado)),
+        ("Uso exclusivo do corte de N−1", "uso_n_menos_1", uso_do_ano_anterior(df)),
+        ("Colunas proibidas", "colunas_proibidas", atributos_nas_entradas(df, entradas)),
+        ("Linhas sem corte anterior", "sem_historico", sem_historico(df)),
+        ("Cenários de inferência", "cenarios_inferencia", cenarios_sem_historico(df, versionado)),
+        ("Entradas dos baselines publicados x montagem compartilhada", "entradas_baselines",
+         entradas_dos_baselines(df)),
+        ("Empates entre nota e corte anterior (treino e validação)", "empates_regra",
+         empates_com_corte_anterior(df)),
     ]
 
     DIR_RELATORIOS.mkdir(parents=True, exist_ok=True)
@@ -253,9 +369,11 @@ def main() -> None:
         "",
         "Arquivo gerado por `python -m src.verificar_dados`. Não editar à mão.",
         "Não treina modelos nem calcula métricas de desempenho.",
+        "Nas tabelas de comparação, os números contam linhas diferentes (0 = iguais).",
         "",
         f"Linhas no parquet limpo: {len(df)}.",
         f"Histórico versionado idêntico ao reconstruído: {igual} ({len(versionado)} linhas).",
+        f"Entradas montadas: {entradas.shape[1]} colunas, iguais à lista da D2 e na mesma ordem.",
     ]
     for titulo, arquivo, tabela in secoes:
         tabela.to_csv(DIR_RELATORIOS / f"verificacao_{arquivo}.csv", index=False, lineterminator="\n")

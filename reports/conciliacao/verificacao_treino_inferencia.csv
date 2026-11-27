@@ -1,0 +1,9 @@
+cenario,linhas,treino_x_inferencia,tipos_e_indice_iguais,treino_x_parquet
+2017,252687,0,sim,0
+2018,186574,0,sim,0
+2019,189741,0,sim,0
+2020,156340,0,sim,0
+2021,112269,0,sim,0
+2022,91846,0,sim,0
+2023,91256,0,sim,0
+"Amostra, uma inscrição por vez",1000,0,sim,-

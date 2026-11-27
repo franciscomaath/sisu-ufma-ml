@@ -1,0 +1,5 @@
+regra,linhas,divergentes,maior_diferenca,alvo_1_para_0,so_ponto_flutuante,alvo_0_para_1
+Sem arredondar,1080713,113458,0.005000,1387,1228,0
+"Meio para cima, 2 casas (conta inteira)",1080713,0,0.000000,0,0,0
+round(2) do pandas,1080713,128,0.010000,0,0,0
+Truncar em 2 casas,1080713,56967,0.010000,159,0,0

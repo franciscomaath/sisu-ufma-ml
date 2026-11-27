@@ -1,0 +1,4 @@
+cenario,linhas,com_corte,sem_corte
+Ano-alvo 2024 (usa o corte de 2023),91256,91178,78
+"Ano-alvo 2030, sem histórico de N−1",91256,0,91256
+Campus que não existe no histórico,91256,0,91256

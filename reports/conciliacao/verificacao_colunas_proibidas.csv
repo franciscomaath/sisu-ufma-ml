@@ -1,0 +1,13 @@
+coluna_proibida,no_parquet,nas_entradas
+NOTA_CORTE,sim,não
+CLASSIFICACAO,não,não
+MATRICULA,não,não
+NOTA_SUFICIENTE,sim,não
+APROVADO,sim,não
+ANO,sim,não
+SEXO,sim,não
+IDADE,sim,não
+UF_CANDIDATO,sim,não
+MUNICIPIO_CANDIDATO,sim,não
+MUNICIPIO_CAMPUS,sim,não
+GRUPO_CONCORRENCIA,sim,não
