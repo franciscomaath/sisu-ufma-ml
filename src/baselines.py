@@ -11,10 +11,21 @@ from src import config
 from src.features import construir_historico, montar_entrada_treino
 from src.split import dividir_temporal
 
+# Abaixo de qualquer diferença possível entre nota e corte (D5): casos sem histórico ficam no fim.
+ESCORE_SEM_HISTORICO = -10_000.0
+
 
 def prever_regra_corte_anterior(df: pd.DataFrame) -> pd.Series:
-    """Prevê 1 se a nota superar o corte anterior. Empates e ausências valem 0."""
-    return df["NOTA_CANDIDATO"].gt(df["CORTE_ANO_ANTERIOR"]).fillna(False).astype("int8")
+    """Prevê 1 se a nota for maior ou igual ao corte anterior, como o alvo (D1, D5).
+
+    Sem corte anterior, prevê 0. Os resultados de `reports/baselines_2022.md` usaram `>` (179593a).
+    """
+    return df["NOTA_CANDIDATO"].ge(df["CORTE_ANO_ANTERIOR"]).fillna(False).astype("int8")
+
+
+def escore_regra_corte_anterior(df: pd.DataFrame) -> pd.Series:
+    """Escore contínuo da regra para AP e ROC-AUC: DIF_CORTE_ANTERIOR; sem histórico, ESCORE_SEM_HISTORICO."""
+    return df["DIF_CORTE_ANTERIOR"].astype("float64").fillna(ESCORE_SEM_HISTORICO)
 
 
 def criar_regressao_logistica(peso_classe: str | None = None) -> Pipeline:

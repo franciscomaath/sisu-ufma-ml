@@ -1,7 +1,10 @@
 import pandas as pd
 
 from src import config
-from src.baselines import criar_regressao_logistica, main, prever_regra_corte_anterior
+from src.baselines import (
+    ESCORE_SEM_HISTORICO, criar_regressao_logistica, escore_regra_corte_anterior, main,
+    prever_regra_corte_anterior,
+)
 from src.features import adicionar_corte_anterior, construir_historico
 from src.limpeza import limpar
 
@@ -11,7 +14,19 @@ def test_regra_corte_anterior():
         "NOTA_CANDIDATO": [650, 600, 550, 650],
         "CORTE_ANO_ANTERIOR": pd.array([600, 600, 600, None], dtype="Float64"),
     })
-    assert prever_regra_corte_anterior(df).tolist() == [1, 0, 0, 0]
+    assert prever_regra_corte_anterior(df).tolist() == [1, 1, 0, 0]  # empate conta como suficiente
+
+
+def test_regra_segue_o_alvo_no_empate():
+    df = pd.DataFrame({"NOTA_CANDIDATO": [625.94, 625.93], "CORTE_ANO_ANTERIOR": [625.94, 625.94]})
+    assert prever_regra_corte_anterior(df).tolist() == [1, 0]
+
+
+def test_escore_da_regra_poe_sem_historico_no_fim():
+    df = pd.DataFrame({"DIF_CORTE_ANTERIOR": pd.array([12.5, -700.0, None], dtype="Float64")})
+    escore = escore_regra_corte_anterior(df)
+    assert escore.tolist() == [12.5, -700.0, ESCORE_SEM_HISTORICO]
+    assert escore.iloc[2] < escore.iloc[1]
 
 
 def test_logistica_aceita_historico_ausente_e_categoria_nova(df_bruto):
