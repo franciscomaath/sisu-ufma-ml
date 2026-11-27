@@ -130,3 +130,10 @@ def test_nao_le_o_teste(ambiente, monkeypatch):
     monkeypatch.setattr(pd, "read_parquet", espiao)
     ex.carregar_dados()
     assert not set().union(*lidos) & set(config.ANOS_TESTE)
+
+
+def test_pontos_de_calibracao_por_faixas_fixas():
+    t = ex.pontos_de_calibracao([0, 1, 0, 1, 1], [0.05, 0.05, 0.55, 0.95, 1.0])
+    assert t["inicio"].tolist() == [0.0, 0.5, 0.9]  # faixas vazias omitidas; 1,0 cai na última
+    assert t["inscricoes"].tolist() == [2, 1, 2]
+    assert t["fracao_observada"].tolist() == [0.5, 0.0, 1.0]

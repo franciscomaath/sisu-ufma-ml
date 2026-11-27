@@ -20,7 +20,7 @@ import matplotlib
 import numpy as np
 import pandas as pd
 import sklearn
-from sklearn.calibration import CalibratedClassifierCV, calibration_curve
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.frozen import FrozenEstimator
 from sklearn.metrics import (
     average_precision_score, brier_score_loss, confusion_matrix, f1_score, log_loss,
@@ -240,21 +240,29 @@ def ajustar_calibradores(modelo, x_b: pd.DataFrame, y_b: pd.Series) -> dict:
             for nome, metodo in [("Sigmoid", "sigmoid"), ("Isotônica", "isotonic")]}
 
 
+def pontos_de_calibracao(y, p, n_faixas: int = 10) -> pd.DataFrame:
+    """Faixas de largura fixa em [0, 1]: inscrições, média prevista e fração observada (faixas vazias omitidas)."""
+    y = np.asarray(y).astype(int)
+    p = np.clip(np.asarray(p, dtype=float), 0, 1)
+    faixa = np.minimum((p * n_faixas).astype(int), n_faixas - 1)
+    t = pd.DataFrame({"faixa": faixa, "p": p, "y": y}).groupby("faixa").agg(
+        inscricoes=("y", "size"), media_prevista=("p", "mean"), fracao_observada=("y", "mean"))
+    t.insert(0, "inicio", t.index / n_faixas)
+    return t.reset_index(drop=True)
+
+
 def figura_calibracao(y_c, probabilidades: dict, caminho) -> pd.DataFrame:
-    """Curva de calibração em C (10 faixas por quantis do escore). Retorna os pontos."""
+    """Curva de calibração em C, com 10 faixas de largura 0,1. Retorna os pontos e as contagens."""
     pontos = []
     fig, eixo = plt.subplots(figsize=(6.4, 5.2))
-    limite = 0
     for nome, p in probabilidades.items():
-        observada, prevista = calibration_curve(y_c, p, n_bins=10, strategy="quantile")
-        limite = max(limite, observada.max(), prevista.max())
-        eixo.plot(prevista, observada, marker=MARCADORES[nome], markersize=8, linewidth=2,
-                  color=CORES[nome], label=nome)
-        pontos += [{"opcao": nome, "faixa": i + 1, "media_prevista": a, "fracao_observada": b}
-                   for i, (a, b) in enumerate(zip(prevista, observada))]
-    limite = min(1.0, limite * 1.05)
-    eixo.plot([0, limite], [0, limite], linestyle="--", linewidth=1, color="#666666", label="Calibração perfeita")
-    eixo.set(xlim=(0, limite), ylim=(0, limite), xlabel="Probabilidade média prevista na faixa",
+        t = pontos_de_calibracao(y_c, p)
+        brier = brier_score_loss(np.asarray(y_c).astype(int), p)
+        eixo.plot(t["media_prevista"], t["fracao_observada"], marker=MARCADORES[nome], markersize=8,
+                  linewidth=2, color=CORES[nome], label=f"{nome} (Brier {brier:.4f})".replace(".", ","))
+        pontos.append(t.assign(opcao=nome))
+    eixo.plot([0, 1], [0, 1], linestyle="--", linewidth=1, color="#666666", label="Calibração perfeita")
+    eixo.set(xlim=(0, 1), ylim=(0, 1), xlabel="Probabilidade média prevista na faixa (faixas de 0,1)",
              ylabel="Fração observada de nota suficiente",
              title="Curva de calibração na parte C da validação (2022)")
     eixo.grid(color="#e6e6e6", linewidth=0.8)
@@ -265,7 +273,7 @@ def figura_calibracao(y_c, probabilidades: dict, caminho) -> pd.DataFrame:
     caminho.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(caminho, dpi=300)
     plt.close(fig)
-    return pd.DataFrame(pontos)
+    return pd.concat(pontos, ignore_index=True)[["opcao", "inicio", "inscricoes", "media_prevista", "fracao_observada"]]
 
 
 def caminho_relativo(caminho) -> str:
