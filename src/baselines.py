@@ -8,7 +8,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 from src import config
-from src.features import adicionar_corte_anterior, colunas_atributos, construir_historico
+from src.features import construir_historico, montar_entrada_treino
 from src.split import dividir_temporal
 
 
@@ -63,13 +63,10 @@ def main() -> None:
         if inscricoes[config.ALVO].nunique() != 2:
             raise SystemExit(f"{nome} precisa conter exemplos das duas classes em {config.ALVO}.")
         print(f"{nome}: {len(inscricoes)} linhas usadas, {len(conjunto) - len(inscricoes)} sem alvo.")
-        rotuladas.append(adicionar_corte_anterior(inscricoes, historico))
+        entradas = montar_entrada_treino(inscricoes, historico)
+        rotuladas.append((entradas, inscricoes[config.ALVO].astype("int8")))
 
-    treino, validacao = rotuladas
-    x_treino = treino[colunas_atributos(treino)]
-    x_validacao = validacao[colunas_atributos(validacao)]
-    y_treino = treino[config.ALVO].astype("int8")
-    y_validacao = validacao[config.ALVO].astype("int8")
+    (x_treino, y_treino), (x_validacao, y_validacao) = rotuladas
 
     previsoes_regra = prever_regra_corte_anterior(x_validacao)
     resultados = {

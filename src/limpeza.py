@@ -56,6 +56,11 @@ def modalidade_canonica(texto: str) -> str:
     return "_".join(partes)
 
 
+def marcar_nota_zero(df: pd.DataFrame) -> pd.Series:
+    """TEM_NOTA_ZERO: 1 se alguma das 5 provas for 0. Vale para a limpeza e a montagem (D13)."""
+    return (df[NOTAS_PROVAS] == 0).any(axis=1).astype("int8")
+
+
 def limpar(df: pd.DataFrame, log: dict | None = None) -> pd.DataFrame:
     """Aplica a limpeza. Se `log` for um dict, registra as linhas afetadas por decisão."""
     log = log if log is not None else {}
@@ -76,9 +81,9 @@ def limpar(df: pd.DataFrame, log: dict | None = None) -> pd.DataFrame:
     df["IDADE"] = idade.mask(fora)
 
     # 3) Notas 0 em provas: marcar (não remover) para não distorcer a população real
-    zero = (df[NOTAS_PROVAS] == 0).any(axis=1)
+    zero = marcar_nota_zero(df)
     log["linhas_com_nota_zero_marcadas"] = int(zero.sum())
-    df["TEM_NOTA_ZERO"] = zero.astype("int8")
+    df["TEM_NOTA_ZERO"] = zero
 
     # 4) Chaves estáveis de curso e modalidade
     df["NOME_CURSO_NORM"] = df["NOME_CURSO"].map(normalizar_texto)

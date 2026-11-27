@@ -14,18 +14,18 @@ arquivo em um commit próprio antes de mudar o código, para o registro continua
 | # | Tema | Decisão | Status |
 |---|---|---|---|
 | D1 | Alvo | `NOTA_SUFICIENTE = NOTA_CANDIDATO >= NOTA_CORTE` | Implementada |
-| D2 | Atributos | Lista explícita (allowlist) em `config.py` | Implementada |
+| D2 | Atributos | Lista explícita (allowlist) em `config.py` | Implementada e verificada nos dados |
 | D3 | Corte anterior ausente | NaN + indicador de ausência no Pipeline | Adotada |
 | D4 | Divisão | Temporal: treino 2018–2021, validação 2022, teste 2023 | Implementada |
 | D5 | Modelos | Regra + regressão logística (baselines), LightGBM, MLP | Baselines avaliados em 2022 |
 | D6 | Desbalanceamento | Peso de classe, comparado na validação | Comparado na regressão logística |
 | D7 | Métricas | Seleção por PR-AUC; Brier para calibração | Adotada |
-| D8 | Calibração e limiar | Ajustados em 2022 | Adotada |
+| D8 | Calibração e limiar | Ajustados em 2022 | Adotada; protocolo de calibração pendente |
 | D9 | Candidato repetido | Limitação declarada no artigo | Adotada |
 | D10 | Casos sem histórico | Aceitar a perda e declarar | Adotada |
 | D11 | Histórico de cortes | Parquet versionado no git | Implementada |
-| D12 | Nota do candidato | A aplicação calcula a partir das 5 notas | Adotada |
-| D13 | Contrato Modelo ↔ Aplicação | Ver seção própria | Adotada |
+| D12 | Nota do candidato | Calculada das 5 notas; 2 casas, meio centésimo para cima | Implementada; reproduz o CSV de 2017–2023 |
+| D13 | Contrato Modelo ↔ Aplicação | Ver seção própria | Montagem implementada e verificada; modelo e aplicação não existem |
 
 ---
 
@@ -64,7 +64,7 @@ Com `APROVADO` como alvo, o modelo aprenderia que a 2ª opção "atrapalha", qua
   (desempenho do modelo final medido contra o alvo antigo).
 
 **Implementação.** `config.ALVO` aponta para `NOTA_SUFICIENTE`, que é criada em `src/limpeza.py`.
-`APROVADO` está em `COLUNAS_NAO_ATRIBUTO`.
+`APROVADO` fica fora de `config.ATRIBUTOS` (D2).
 
 ---
 
@@ -104,7 +104,11 @@ ATRIBUTOS = ATRIBUTOS_NUMERICOS + ATRIBUTOS_CATEGORICOS
 para comparação, e reportar a diferença. Se melhorar a métrica, isso indica que o modelo estaria
 usando um atalho demográfico, o que é assunto para a discussão de vieses.
 
-**Implementação.** `colunas_atributos()` verifica a presença das colunas obrigatórias e retorna os atributos na ordem de `config.ATRIBUTOS`. Os testes conferem a lista e a exclusão de colunas indevidas.
+**Implementação.** `features.colunas_atributos(df)` verifica a presença das colunas obrigatórias e
+retorna os atributos na ordem de `config.ATRIBUTOS`; `features.selecionar_atributos(df)` devolve só
+essas colunas. A montagem da entrada (D13) termina nessa seleção. Os testes conferem a lista e a
+exclusão de colunas indevidas, e nas entradas montadas dos dados de 2017–2023 não há nenhuma
+coluna excluída.
 
 ---
 
@@ -159,13 +163,24 @@ estratificada do treino, com semente fixa e documentada.
 A regra do Baseline 1 é o adversário principal: o modelo de ML precisa superá-la. Se não superar,
 isso também é um resultado e deve ser discutido com honestidade no artigo.
 
+A regra usa `>` e o alvo usa `>=` (D1). A diferença está registrada na proposta P3.
+
 ---
 
 ## D6. Desbalanceamento
 
-A classe positiva vai de 3% a 6% conforme o ano. Comparar, na validação, o modelo com e sem peso
-de classe (`class_weight="balanced"` / `scale_pos_weight`). Não usar SMOTE nem reamostragem fora
-do Pipeline.
+A classe positiva é rara. Nas linhas com alvo `NOTA_SUFICIENTE`:
+
+| Ano | 2017 | 2018 | 2019 | 2020 | 2021 | 2022 | 2023 |
+|---|---|---|---|---|---|---|---|
+| Com alvo | 252.606 | 186.564 | 189.735 | 156.325 | 112.221 | 91.750 | 91.178 |
+| Positivos | 6.923 | 7.012 | 7.496 | 7.325 | 7.201 | 7.154 | 7.076 |
+| Taxa | 2,74% | 3,76% | 3,95% | 4,69% | 6,42% | 7,80% | 7,76% |
+
+No conjunto de treino (2018–2021) são 29.034 positivos em 644.845 linhas (4,50%).
+
+Comparar, na validação, o modelo com e sem peso de classe (`class_weight="balanced"` /
+`scale_pos_weight`). Não usar SMOTE nem reamostragem fora do Pipeline.
 
 ---
 
@@ -174,15 +189,17 @@ do Pipeline.
 - **Seleção do modelo:** PR-AUC na validação (mais informativa que ROC-AUC com classe rara).
 - **Reportar no teste, para todos os modelos:** F1, precisão, revocação, ROC-AUC, PR-AUC, Brier e
   matriz de confusão. Destacar a melhor de cada coluna na tabela.
-- **Não usar acurácia como métrica principal:** prever "não" para todos já dá ~94%.
+- **Não usar acurácia como métrica principal:** prever "não" para todos já acertaria 95,50% das
+  linhas com alvo no treino e 92,20% na validação.
 
 ---
 
 ## D8. Calibração e limiar
 
-**Contexto.** A taxa de positivos sobe ao longo dos anos (3,1% em 2018, 6,2% em 2022, 6,1% em 2023)
-porque o número de aprovados é quase fixo (~5,7 mil/ano) e as inscrições caem. Treinando em
-2018–2021, o modelo tende a **subestimar** as probabilidades em 2022–2023.
+**Contexto.** A taxa de positivos sobe ao longo dos anos (3,76% em 2018, 7,80% em 2022, 7,76% em
+2023; D6) porque o número de positivos varia pouco (de 7.012 a 7.496 por ano em 2018–2023) e as
+inscrições caem. Com 4,50% de positivos no treino, espera-se que o modelo **subestime** as
+probabilidades em 2022–2023 (ainda a conferir na validação).
 
 **Decisão.**
 - Recalibrar o modelo escolhido **em 2022**, cuja taxa é parecida com a de 2023. Comparar Platt
@@ -192,6 +209,11 @@ porque o número de aprovados é quase fixo (~5,7 mil/ano) e as inscrições cae
 
 A aplicação mostra a **probabilidade calibrada**, por isso a calibração é parte central do trabalho,
 e não um detalhe.
+
+**Pendente: protocolo de calibração.** O texto acima, junto com a D4, usa 2022 para escolher
+hiperparâmetros e modelo, ajustar o calibrador, comparar os calibradores pelo Brier e escolher o
+limiar. Comparar nas mesmas observações usadas no ajuste favorece resultados otimistas, sobretudo
+para a isotônica. A equipe ainda precisa decidir o protocolo, antes de treinar o modelo final.
 
 ---
 
@@ -222,15 +244,45 @@ após clonar o repositório. O `.joblib` continua ignorado.
 
 ## D12. Nota do candidato
 
-Verificado em 100% das linhas:
+**Decisão.** Média simples das 5 notas, com o bônus, em 2 casas decimais, com o meio centésimo
+para cima:
 
 ```
-NOTA_CANDIDATO = média simples das 5 notas × (1 + PERCENTUAL_BONUS / 100)
+NOTA_CANDIDATO = arredondar2( média das 5 notas × (1 + PERCENTUAL_BONUS / 100) )
 ```
 
-Não há pesos por curso. A aplicação pede as 5 notas e se o candidato tem bônus, e calcula
-`NOTA_CANDIDATO` sozinha. Adicionar um teste que confirme a fórmula no parquet real
-(pulado se o parquet não existir).
+**Ordem das operações**, em aritmética inteira, para não depender de ponto flutuante:
+
+1. cada prova vira um inteiro em décimos (650,3 → 6503);
+2. somam-se as cinco;
+3. `produto = soma × (100 + PERCENTUAL_BONUS)`;
+4. um único arredondamento, no fim, depois do bônus: `centésimos = (produto + 25) // 50`;
+5. `NOTA_CANDIDATO = centésimos / 100`.
+
+As provas devem ter no máximo 1 casa decimal, o bônus deve ser inteiro e nada pode faltar; caso
+contrário a função dá `ValueError`. A faixa das notas e os bônus permitidos são validados pela
+aplicação.
+
+**Implementação.** `features.calcular_nota_candidato(df)` é a única função da nota, usada no treino
+e na inferência por meio da montagem da D13. A aplicação pede as 5 notas e o bônus; não há pesos
+por curso.
+
+**Verificado** (`python -m src.verificar_dados` e `tests/test_dados_reais.py`): nas 1.080.713
+inscrições de 2017–2023, a nota recalculada é exatamente igual à do CSV, inclusive nos 319 empates
+de meio centésimo, todos em 2023. Alternativas rejeitadas:
+
+| Regra | Linhas divergentes | Linhas em que o alvo mudaria |
+|---|---|---|
+| Sem arredondar | 113.458 | 1.387 (1.228 só por ponto flutuante) |
+| Meio para cima, conta inteira (adotada) | 0 | 0 |
+| `round(2)` do pandas | 128 | 0 |
+| Truncar em 2 casas | 56.967 | 159 |
+
+**Alcance.** A regra foi obtida por reprodução dos dados históricos. **Não é apresentada como regra
+oficial atual do SISU:** nenhuma fonte oficial foi consultada. Para citá-la como regra do SISU, ou
+aplicá-la a edições futuras com essa garantia, é preciso confirmar no edital ou em norma.
+
+**O alvo não muda:** `NOTA_SUFICIENTE` continua calculado com a `NOTA_CANDIDATO` do CSV (D1).
 
 ---
 
@@ -244,13 +296,42 @@ Para as duas frentes trabalharem em paralelo, o Modelo entrega e a Aplicação c
 | `models/historico_cortes.parquet` | Cortes por curso, modalidade, edição e ano |
 | `models/metadados.json` | Lista de atributos, limiar, métricas de teste, versões das bibliotecas, data, último ano do histórico |
 
-**Montagem da entrada.** O cálculo de `NOTA_CANDIDATO`, `CORTE_ANO_ANTERIOR` e `DIF_CORTE_ANTERIOR`
-fica em **uma única função** em `src/features.py` (por exemplo, `montar_entrada(...)`), usada tanto
-no treino quanto na aplicação. Assim a aplicação **não reimplementa** o pré-processamento, como exige
-o enunciado.
+**Montagem da entrada.** `NOTA_CANDIDATO`, `TEM_NOTA_ZERO`, `CORTE_ANO_ANTERIOR` e
+`DIF_CORTE_ANTERIOR` são calculados por **um único caminho de código** em `src/features.py`, usado no
+treino e na aplicação. Assim a aplicação **não reimplementa** o pré-processamento, como exige o
+enunciado.
 
-**Previsão para um ano novo.** A aplicação usa o corte do **ano mais recente** do histórico (2023)
-como "corte do ano anterior" para a próxima edição.
+| Função | Uso | Corte consultado |
+|---|---|---|
+| `montar_entrada_treino(df, historico)` | dados históricos; exige a coluna `ANO` | `ANO − 1` de cada linha |
+| `montar_entrada_inferencia(df, historico, ano_alvo)` | aplicação | `ano_alvo − 1` |
+
+- **Entrada** (`features.COLUNAS_ENTRADA`): `CODIGO_CAMPUS`, `NOME_CURSO_NORM`, `GRAU`, `TURNO`,
+  `MODALIDADE`, `EDICAO`, `OPCAO`, `PERCENTUAL_BONUS` e as 5 provas. Falta de coluna é erro.
+- **Saída:** exatamente `config.ATRIBUTOS`, na ordem da lista, com o índice da entrada. As outras
+  colunas são descartadas.
+- **Sem histórico:** `CORTE_ANO_ANTERIOR` e `DIF_CORTE_ANTERIOR` ficam NaN (D3).
+- **Histórico:** `construir_historico` dá `ValueError` se uma chave tiver mais de um corte no mesmo
+  ano.
+- **Fica com a aplicação:** validar a faixa das notas e do bônus e oferecer campus, curso, grau,
+  turno e modalidade **a partir do histórico**. Um texto escrito de outra forma (por exemplo, o nome
+  do curso sem normalização) não gera erro: só resulta em corte ausente.
+
+**Verificado nos dados de 2017–2023** (`reports/conciliacao/verificacao_dados.md`):
+
+- entradas de treino e de inferência iguais nas 1.080.713 linhas, ano a ano, e em 1.000 inscrições
+  montadas uma por vez;
+- só o corte de N−1 altera as entradas do ano N, também conferido por uma segunda implementação;
+- nenhuma coluna excluída pela D2 nas entradas;
+- sem histórico, corte e diferença ficam ausentes e os outros 15 atributos ficam preenchidos.
+
+**Ainda não existe, portanto não foi verificado:** `pipeline_final.joblib`, `metadados.json`, a
+aplicação e o tratamento dos ausentes pelo Pipeline final.
+
+**Previsão para um ano novo.** A aplicação usa o corte do **ano mais recente** do histórico (2023),
+chamando a montagem com `ano_alvo` igual a esse ano mais 1 (2024). Com `ano_alvo` maior, não há
+corte de N−1 e os dois atributos ficam ausentes. O desempenho para edições posteriores a 2023 não
+foi validado, e a aplicação precisa informar isso.
 
 **Enquanto o modelo final não existir,** a aplicação pode usar um `pipeline_final.joblib` provisório
 (por exemplo, uma regressão logística simples) com as mesmas colunas de entrada.
@@ -260,40 +341,27 @@ como "corte do ano anterior" para a próxima edição.
 ## Propostas em aberto (aguardam a equipe)
 
 Nada nesta seção foi adotado: o código, o alvo e as decisões acima continuam como estão.
-Os números saem de `python -m src.verificar_dados` (`reports/verificacao_dados.md`).
+P1 (arredondamento da nota) e P2 (taxas do alvo atual) foram aplicadas em D12 e em D6–D8 em
+27/11/2026. O protocolo de calibração também está em aberto (D8).
 
-### P1. D12: a nota original é arredondada para 2 casas
+### P3. D5: a regra usa `>`, o alvo usa `>=`
 
-**Problema.** A fórmula da D12 só reproduz `NOTA_CANDIDATO` nas 1.080.713 linhas quando o
-resultado é arredondado para 2 casas, com o meio centésimo para cima, em aritmética exata.
+**Situação.** A regra publicada prevê 1 quando `NOTA_CANDIDATO > CORTE_ANO_ANTERIOR`
+(`src/baselines.py`, `reports/baselines_2022.md`). O commit `68a3e06` propunha `>=`, como no alvo.
+A proposta não foi adotada, para o texto não se separar do código e dos resultados publicados.
+Entre as linhas com alvo e corte anterior, a nota é igual a esse corte em 4 (2018), 7 (2019),
+3 (2020), 9 (2021) e 3 (2022) linhas.
 
-| Regra | Linhas divergentes | Linhas em que o alvo mudaria |
-|---|---|---|
-| Sem arredondar | 113.458 | 1.387 (1.228 só por ponto flutuante) |
-| Meio para cima, conta inteira | 0 | 0 |
-| `round(2)` do pandas | 128 | 0 |
-| Truncar em 2 casas | 56.967 | 159 |
+**Se a equipe adotar `>=`:** mudar D5 e o código e executar os baselines de novo, registrando o
+resultado ao lado do publicado, sem substituí-lo.
 
-O alvo atual não é afetado, porque usa o `NOTA_CANDIDATO` do CSV. O risco está na aplicação:
-recalcular a nota sem essa regra muda `NOTA_CANDIDATO` e `DIF_CORTE_ANTERIOR` em relação ao treino.
+### P4. D9: a divisão por ano não garante pessoas diferentes
 
-**Proposta.** Acrescentar à D12 a regra "meio para cima, 2 casas" e implementá-la uma única vez em
-`src/features.py`, na montagem de entrada da D13 (em centésimos:
-`(soma das notas em décimos × (100 + bônus) + 25) // 50`).
+**Situação.** A D9 afirma que a divisão por ano evita que a mesma pessoa esteja no treino e no
+teste. Os dados não têm identificador, e uma pessoa pode se inscrever em anos diferentes.
 
-### P2. D6, D7 e D8: as taxas citadas são do alvo antigo
-
-**Problema.** D6 ("3% a 6%"), D7 ("~94%") e D8 (3,1% em 2018, 6,2% em 2022, 6,1% em 2023; "~5,7 mil
-por ano") descrevem `APROVADO`. Com `NOTA_SUFICIENTE` (D1), nas linhas com alvo:
-
-| Ano | 2017 | 2018 | 2019 | 2020 | 2021 | 2022 | 2023 |
-|---|---|---|---|---|---|---|---|
-| Positivos | 6.923 | 7.012 | 7.496 | 7.325 | 7.201 | 7.154 | 7.076 |
-| Taxa | 2,74% | 3,76% | 3,95% | 4,69% | 6,42% | 7,80% | 7,76% |
-
-**Proposta.** Atualizar esses números em D6, D7 e D8 antes de usá-los no artigo. O raciocínio das
-três decisões continua válido: a classe é rara, a taxa sobe ao longo dos anos e a de 2022 é próxima
-da de 2023.
+**Proposta.** Dizer que a divisão separa os processos seletivos no tempo, mas não garante que as
+pessoas sejam distintas, e declarar isso como limitação.
 
 ---
 
