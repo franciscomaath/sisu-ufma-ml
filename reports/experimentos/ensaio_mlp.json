@@ -1,0 +1,13 @@
+{
+  "configuracao": "hidden_layer_sizes=(128, 64), alpha=0.0001, peso=None",
+  "linhas_ensaio": 50000,
+  "positivos_ensaio": 2251,
+  "segundos_ensaio": 5.0,
+  "linhas_treino": 644845,
+  "configuracoes_na_grade": 8,
+  "minutos_projetados_grade_completa": 8.6,
+  "limite_minutos": 40,
+  "usar_subamostra": false,
+  "linhas_por_configuracao": 644845,
+  "avisos": []
+}

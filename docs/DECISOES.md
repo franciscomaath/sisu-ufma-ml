@@ -17,10 +17,10 @@ arquivo em um commit próprio antes de mudar o código, para o registro continua
 | D2 | Atributos | Lista explícita (allowlist) em `config.py` | Implementada e verificada nos dados |
 | D3 | Corte anterior ausente | NaN + indicador de ausência no Pipeline | Adotada |
 | D4 | Divisão | Temporal: treino 2018–2021, validação 2022 (A/B/C por grupo), teste 2023 | Implementada |
-| D5 | Modelos | Regra (`>=`) + regressão logística, LightGBM, MLP; busca registrada | Protocolo registrado |
+| D5 | Modelos | Regra (`>=`) + regressão logística, LightGBM, MLP; busca registrada | Executada em A: logística `C=10`, sem peso |
 | D6 | Desbalanceamento | Peso de classe, comparado na validação | Comparado na regressão logística |
 | D7 | Métricas | Seleção por PR-AUC; Brier para calibração | Adotada |
-| D8 | Calibração e limiar | Calibrador ajustado em B; escolha e limiar em C | Protocolo registrado |
+| D8 | Calibração e limiar | Calibrador ajustado em B; escolha e limiar em C | Executada: isotônica, limiar 0,3086 |
 | D9 | Candidato repetido | Limitação declarada no artigo, inclusive entre anos | Adotada |
 | D10 | Casos sem histórico | Aceitar a perda e declarar | Adotada |
 | D11 | Histórico de cortes | Parquet versionado no git | Implementada |
@@ -234,6 +234,11 @@ configuração. Todos os resultados são reportados, inclusive os inferiores à 
 
 Implementado em `src/modelos.py` e `src/experimentos.py`.
 
+**Resultado** (27/11/2026, `reports/relatorio_experimentos_2022.md`): o ensaio projetou 8,6 minutos
+para a grade da MLP, abaixo do limite, e a MLP usou o treino completo. Selecionada a regressão
+logística com `C=10` e sem peso de classe (AP 0,7158 em A, contra 0,5171 da regra). `C=10` está
+na borda da grade; a grade não foi ampliada depois de ver os resultados.
+
 ---
 
 ## D6. Desbalanceamento
@@ -288,6 +293,11 @@ A aplicação mostra a **probabilidade calibrada**, por isso a calibração é p
 e não um detalhe.
 
 Implementado em `src/experimentos.py`.
+
+**Resultado** (27/11/2026): em C, Brier 0,0525 sem recalibração, 0,0385 com sigmoid e 0,0382 com
+isotônica. Pela regra, venceu a isotônica, por 0,0002; ela tem AP e log loss piores que a sigmoid
+em C (relatório dos experimentos). Limiar de maior F1 em C: 0,3086 (F1 0,6156). Avaliação em
+2023 pendente.
 
 ---
 
@@ -410,8 +420,9 @@ chamando a montagem com `ano_alvo` igual a esse ano mais 1 (2024). Com `ano_alvo
 corte de N−1 e os dois atributos ficam ausentes. O desempenho para edições posteriores a 2023 não
 foi validado, e a aplicação precisa informar isso.
 
-**Enquanto o modelo final não existir,** a aplicação pode usar um `pipeline_final.joblib` provisório
-(por exemplo, uma regressão logística simples) com as mesmas colunas de entrada.
+**Modelo escolhido na validação (27/11/2026).** `models/pipeline_final.joblib` (não versionado; gerado
+por `python -m src.experimentos`) e `models/metadados.json` existem. A avaliação em 2023 está pendente
+e marcada nos metadados.
 
 ---
 

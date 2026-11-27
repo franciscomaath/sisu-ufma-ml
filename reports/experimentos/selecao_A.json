@@ -1,0 +1,12 @@
+{
+  "familia": "logistica",
+  "parametros": {
+    "C": 10.0,
+    "peso": null
+  },
+  "configuracao": "C=10.0, peso=None",
+  "ap_A": 0.7157950443421697,
+  "roc_auc_A": 0.9604858982262034,
+  "ap_regra_A": 0.5171181187136975,
+  "criterio": "maior AP em A; empate na 4ª casa decidido pela ROC-AUC"
+}

@@ -48,8 +48,14 @@ python -m src.limpeza    # gera data/processed/sisu_limpo.parquet
 python -m src.features   # gera models/historico_cortes.parquet e mostra a cobertura por ano
 python -m src.baselines  # compara a regra e as regressões na validação de 2022
 python -m src.verificar_dados  # confere a preparação; grava em reports/conciliacao/
+python -m src.particoes        # divide 2022 em A/B/C (D4); grava reports/experimentos/particoes_2022.csv
+python -m src.exploracao       # figuras e tabelas da exploração, só com o treino
+python -m src.experimentos     # busca em A, calibração em B/C; gera models/pipeline_final.joblib e metadados.json
 pytest -q                # testes (os que usam o parquet real são pulados se ele não existir)
 ```
+
+`models/pipeline_final.joblib` não é versionado: regenere-o com os comandos acima. Os experimentos
+não leem 2023.
 
 ## Estado do projeto
 
@@ -60,7 +66,8 @@ pytest -q                # testes (os que usam o parquet real são pulados se el
 | Lista explícita de atributos (D2) | ✅ Implementada |
 | Nota do candidato (D12) e montagem compartilhada da entrada (D13) | ✅ Verificadas nos dados de 2017–2023 (`reports/relatorio_conciliacao.md`) |
 | Regra do corte anterior e regressão logística | ✅ Comparadas na validação de 2022 |
-| LightGBM, MLP, calibração e avaliação final | ⏳ A fazer |
+| Divisão A/B/C de 2022, exploração, comparação em A, calibração e limiar | ✅ Feitos (`reports/relatorio_experimentos_2022.md`) |
+| Avaliação final em 2023 | ⏳ Pendente |
 | Aplicação Streamlit | ⏳ A fazer |
 | Artigo SBC e vídeo | ⏳ A fazer |
 
@@ -87,7 +94,9 @@ tests/               testes automatizados
 
 ## Resultados
 
-Na validação de 2022, a regressão logística sem pesos teve a maior PR-AUC (0,6991). A versão com pesos balanceados teve o maior F1 (0,6016) com limiar de 0,5. [Relatório dos baselines](reports/baselines_2022.md)
+Na parte A da validação de 2022, a regressão logística (`C=10`, sem peso de classe) teve a maior AP (0,7158), à frente da MLP (0,6521), do LightGBM (0,5977) e da regra do corte anterior (0,5171). Calibração isotônica e limiar 0,3086 foram escolhidos na parte C. Esses números serviram para escolher o modelo; o desempenho final em 2023 ainda não foi medido. [Relatório dos experimentos](reports/relatorio_experimentos_2022.md)
+
+Resultados anteriores, com a regra usando `>` e toda a validação de 2022: [relatório dos baselines](reports/baselines_2022.md).
 
 ## Aplicação
 
