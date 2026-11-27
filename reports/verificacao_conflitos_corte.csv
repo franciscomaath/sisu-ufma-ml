@@ -1,0 +1,7 @@
+verificacao,quantidade
+Linhas com algum campo da chave ausente,0
+"Chaves (curso, modalidade, edição, ano)",8343
+Chaves com mais de um corte,0
+Chaves que misturam corte preenchido e ausente,0
+Chaves sem nenhum corte,132
+Linhas nas chaves sem nenhum corte,334

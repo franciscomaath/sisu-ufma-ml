@@ -13,5 +13,7 @@ data/raw/*
 data/processed/*
 !data/processed/.gitkeep
 models/*.joblib
+# CSV bruto deixado na raiz do projeto (o caminho oficial é data/raw/)
+/sisu_ufma_2017_2023.csv
 # Downloads incompletos
 *.crdownload
