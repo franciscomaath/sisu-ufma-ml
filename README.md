@@ -47,6 +47,7 @@ pip install -r requirements.txt
 python -m src.limpeza    # gera data/processed/sisu_limpo.parquet
 python -m src.features   # gera models/historico_cortes.parquet e mostra a cobertura por ano
 python -m src.baselines  # compara a regra e as regressões na validação de 2022
+python -m src.verificar_dados  # confere alvo, fórmula da nota, cortes e cobertura
 pytest -q                # testes
 ```
 

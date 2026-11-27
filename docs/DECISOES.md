@@ -257,6 +257,46 @@ como "corte do ano anterior" para a próxima edição.
 
 ---
 
+## Propostas em aberto (aguardam a equipe)
+
+Nada nesta seção foi adotado: o código, o alvo e as decisões acima continuam como estão.
+Os números saem de `python -m src.verificar_dados` (`reports/verificacao_dados.md`).
+
+### P1. D12: a nota original é arredondada para 2 casas
+
+**Problema.** A fórmula da D12 só reproduz `NOTA_CANDIDATO` nas 1.080.713 linhas quando o
+resultado é arredondado para 2 casas, com o meio centésimo para cima, em aritmética exata.
+
+| Regra | Linhas divergentes | Linhas em que o alvo mudaria |
+|---|---|---|
+| Sem arredondar | 113.458 | 1.387 (1.228 só por ponto flutuante) |
+| Meio para cima, conta inteira | 0 | 0 |
+| `round(2)` do pandas | 128 | 0 |
+| Truncar em 2 casas | 56.967 | 159 |
+
+O alvo atual não é afetado, porque usa o `NOTA_CANDIDATO` do CSV. O risco está na aplicação:
+recalcular a nota sem essa regra muda `NOTA_CANDIDATO` e `DIF_CORTE_ANTERIOR` em relação ao treino.
+
+**Proposta.** Acrescentar à D12 a regra "meio para cima, 2 casas" e implementá-la uma única vez em
+`src/features.py`, na montagem de entrada da D13 (em centésimos:
+`(soma das notas em décimos × (100 + bônus) + 25) // 50`).
+
+### P2. D6, D7 e D8: as taxas citadas são do alvo antigo
+
+**Problema.** D6 ("3% a 6%"), D7 ("~94%") e D8 (3,1% em 2018, 6,2% em 2022, 6,1% em 2023; "~5,7 mil
+por ano") descrevem `APROVADO`. Com `NOTA_SUFICIENTE` (D1), nas linhas com alvo:
+
+| Ano | 2017 | 2018 | 2019 | 2020 | 2021 | 2022 | 2023 |
+|---|---|---|---|---|---|---|---|
+| Positivos | 6.923 | 7.012 | 7.496 | 7.325 | 7.201 | 7.154 | 7.076 |
+| Taxa | 2,74% | 3,76% | 3,95% | 4,69% | 6,42% | 7,80% | 7,76% |
+
+**Proposta.** Atualizar esses números em D6, D7 e D8 antes de usá-los no artigo. O raciocínio das
+três decisões continua válido: a classe é rara, a taxa sobe ao longo dos anos e a de 2022 é próxima
+da de 2023.
+
+---
+
 ## Pendências fora da modelagem
 
 - **Licença dos dados:** confirmar no Portal de Dados Abertos do MEC e atualizar o README.
